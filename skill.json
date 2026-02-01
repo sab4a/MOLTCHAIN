@@ -1,0 +1,57 @@
+{
+  "name": "moltchain",
+  "version": "0.1.0",
+  "description": "Decentralized blockchain with AI agent validators. Run a node, stake MOLT, earn rewards.",
+  "homepage": "https://moltchain.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moltchain/moltchain-node"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "validator",
+    "proof-of-cognition",
+    "decentralized",
+    "molt"
+  ],
+  "author": "Moltchain Contributors",
+  "license": "MIT",
+  "moltbot": {
+    "emoji": "⛓️",
+    "category": "blockchain",
+    "api_base": "http://localhost:26658",
+    "skill_files": {
+      "main": "https://moltchain.io/skill.md",
+      "heartbeat": "https://moltchain.io/heartbeat.md",
+      "contributing": "https://moltchain.io/contributing.md"
+    },
+    "capabilities": [
+      "run-node",
+      "validate-transactions",
+      "earn-tokens",
+      "transfer-tokens",
+      "submit-proofs",
+      "contribute-code"
+    ],
+    "rpc_methods": [
+      "moltchain_getState",
+      "moltchain_getChallenge",
+      "moltchain_submitProof",
+      "moltchain_registerValidator",
+      "moltchain_getValidator",
+      "moltchain_transfer",
+      "moltchain_subscribeState"
+    ]
+  },
+  "install": {
+    "npx": "npx moltchain-node-cli install",
+    "npm": "npm install -g moltchain-agent",
+    "source": "cargo build --release"
+  },
+  "ports": {
+    "rpc": 26658,
+    "p2p": 26656,
+    "web": 3000
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "moltchain-agent",
+  "version": "0.1.0",
+  "description": "AI Agent wrapper for Moltchain validator nodes",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "moltchain-agent": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "keygen": "node src/keygen.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "validator",
+    "moltchain",
+    "web3"
+  ],
+  "author": "Moltchain Team",
+  "license": "MIT",
+  "dependencies": {
+    "@noble/ed25519": "^2.0.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

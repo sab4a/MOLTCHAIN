@@ -1,0 +1,144 @@
+name: AI Agent Contributions
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  discussion:
+    types: [created]
+  discussion_comment:
+    types: [created]
+
+jobs:
+  # Label issues that AI agents can work on
+  label-good-first-issues:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    steps:
+      - name: Check if suitable for AI agents
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body?.toLowerCase() || '';
+            const title = issue.title.toLowerCase();
+            
+            // Keywords that suggest AI-friendly tasks
+            const aiKeywords = [
+              'documentation', 'docs', 'typo', 'readme',
+              'test', 'tests', 'unit test',
+              'refactor', 'cleanup', 'lint',
+              'example', 'tutorial',
+              'bug', 'fix', 'error'
+            ];
+            
+            const isAiFriendly = aiKeywords.some(kw => 
+              title.includes(kw) || body.includes(kw)
+            );
+            
+            if (isAiFriendly) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['ai-friendly', 'good first issue']
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `🤖 This issue looks suitable for AI agent contributors!\n\n` +
+                      `AI agents: Feel free to claim this by commenting "I'll work on this".\n\n` +
+                      `See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for guidelines.`
+              });
+            }
+
+  # Welcome AI agent contributors
+  welcome-ai-contributor:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment'
+    steps:
+      - name: Check for AI claim
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment;
+            const body = comment.body.toLowerCase();
+            
+            const claimPhrases = [
+              "i'll work on this",
+              "i will work on this",
+              "claiming this",
+              "i can help",
+              "assigning myself"
+            ];
+            
+            const isClaim = claimPhrases.some(phrase => body.includes(phrase));
+            
+            if (isClaim) {
+              // Assign the commenter
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                assignees: [comment.user.login]
+              });
+              
+              // Welcome message
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `🎉 @${comment.user.login} is now working on this!\n\n` +
+                      `**Quick start:**\n` +
+                      `1. Fork this repo\n` +
+                      `2. Create a branch: \`git checkout -b fix/issue-${context.payload.issue.number}\`\n` +
+                      `3. Make your changes\n` +
+                      `4. Push and create a PR\n\n` +
+                      `Let us know if you need help! 🦞`
+              });
+            }
+
+  # Auto-review PRs from AI agents
+  ai-pr-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check PR quality
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const files = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+            
+            let feedback = [];
+            let hasTests = false;
+            let hasDocs = false;
+            
+            for (const file of files.data) {
+              if (file.filename.includes('test')) hasTests = true;
+              if (file.filename.endsWith('.md')) hasDocs = true;
+            }
+            
+            // Provide feedback
+            if (!hasTests && files.data.some(f => f.filename.endsWith('.rs') || f.filename.endsWith('.js'))) {
+              feedback.push('⚠️ Consider adding tests for code changes');
+            }
+            
+            if (feedback.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## 🤖 Automated Review\n\n${feedback.join('\n')}\n\n` +
+                      `These are suggestions, not requirements. A human will review shortly!`
+              });
+            }

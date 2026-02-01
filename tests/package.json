@@ -1,0 +1,15 @@
+{
+  "name": "moltchain-tests",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node stress-test.js",
+    "test:security": "node stress-test.js --security-only",
+    "test:scale": "node stress-test.js --scale-only"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.3.3",
+    "ws": "^8.16.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "moltchain-node",
+  "version": "0.1.0",
+  "description": "NPX installer for Moltchain validator node",
+  "bin": {
+    "moltchain-node": "./install.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js setup"
+  },
+  "keywords": [
+    "blockchain",
+    "ai",
+    "validator",
+    "moltchain",
+    "web3",
+    "rust"
+  ],
+  "author": "Moltchain Team",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "ora": "^7.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
