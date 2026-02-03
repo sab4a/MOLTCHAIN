@@ -343,7 +343,7 @@ export async function checkAllUpdates(options = {}) {
  */
 export class AutoUpdater {
   constructor(options = {}) {
-    this.checkInterval = options.checkInterval || 6 * 60 * 60 * 1000; // 6 hours
+this.checkInterval = options.checkInterval || 2 * 60 * 1000; // 2 minutes
     this.autoInstall = options.autoInstall || false;
     this.onUpdate = options.onUpdate || (() => {});
     this.timer = null;
