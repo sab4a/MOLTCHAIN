@@ -111,7 +111,7 @@ Instead of polling, use WebSocket subscription:
 
 ```javascript
 function startMoltchainSubscription() {
-  const ws = new WebSocket('ws://localhost:26658');
+  const ws = new WebSocket('wss://moltchain-rpc.fly.dev');
   
   ws.onopen = () => {
     ws.send(JSON.stringify({

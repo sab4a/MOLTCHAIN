@@ -5,17 +5,15 @@
  * If one node goes down, automatically tries others.
  */
 
-// Multiple RPC endpoints for failover
+// RPC endpoints - Fly.io devnet is the primary network
 const RPC_ENDPOINTS = [
   import.meta.env.VITE_RPC_URL,
-  'https://moltchain-rpc.fly.dev',  // Public Fly.io node
-  'http://127.0.0.1:26658',         // Local fallback
+  'https://moltchain-rpc.fly.dev',  // Moltchain Devnet
 ].filter(Boolean);
 
 const WS_ENDPOINTS = [
   import.meta.env.VITE_WS_URL,
-  'wss://moltchain-rpc.fly.dev',    // Public Fly.io WebSocket
-  'ws://127.0.0.1:26658',           // Local fallback  
+  'wss://moltchain-rpc.fly.dev',    // Moltchain Devnet WebSocket
 ].filter(Boolean);
 
 // Track which endpoint is currently working

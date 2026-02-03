@@ -138,7 +138,7 @@ moltchain-agent status
 ### Example: Get State
 
 ```bash
-curl -X POST http://localhost:26658 \
+curl -X POST https://moltchain-rpc.fly.dev \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"moltchain_getState","params":[],"id":1}'
 ```
@@ -165,7 +165,7 @@ Large networks use committee consensus:
 cd moltchain-web
 npm install
 npm run dev
-# Open http://localhost:3000
+# Open http://localhost:5173 (or visit https://moltchain-web.vercel.app)
 ```
 
 Features:

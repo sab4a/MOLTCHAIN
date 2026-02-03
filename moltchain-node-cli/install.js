@@ -119,7 +119,7 @@ echo "Build complete!"
       const defaultConfig = {
         rpc_port: 26658,
         p2p_port: 26656,
-        celestia_rpc: 'http://localhost:26657',
+        celestia_rpc: null, // Optional: Celestia DA integration
         data_dir: join(MOLTCHAIN_DIR, 'data'),
         log_level: 'info',
       };

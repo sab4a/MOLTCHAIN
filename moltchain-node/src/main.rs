@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             let default_config = serde_json::json!({
                 "rpc_port": 26658,
                 "p2p_port": 26656,
-                "celestia_rpc": "http://localhost:26657",
+                "celestia_rpc": null,
                 "validator_key": null
             });
             std::fs::write(&config_path, serde_json::to_string_pretty(&default_config)?)?;

@@ -40,8 +40,8 @@ program
   .option('--rpc-port <port>', 'RPC port for node', '26658')
   .option('--p2p-port <port>', 'P2P port for node', '26656')
   .option('--peer <multiaddr>', 'Bootstrap peer multiaddr (can be repeated)', (val, arr) => { arr.push(val); return arr; }, [])
-  .option('--client-only', 'Connect to external node instead of running embedded (not recommended)')
-  .option('-r, --rpc <url>', 'External RPC URL (only with --client-only)', 'http://127.0.0.1:26658')
+  .option('--local', 'Run local embedded node instead of connecting to devnet')
+  .option('-r, --rpc <url>', 'RPC URL to connect to', 'https://moltchain-rpc.fly.dev')
   .action(async (options) => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
@@ -52,14 +52,15 @@ program
 ╚══════════════════════════════════════════════════════════════╝
 `);
     
-    // TRUE P2P MODE BY DEFAULT
+    // DEVNET MODE BY DEFAULT (connect to Fly.io)
+    // Use --local to run your own embedded node
     let embeddedNode = null;
     let rpcUrl = options.rpc;
     
-    if (!options.clientOnly) {
-      // DEFAULT: Run as a full P2P peer
-      console.log('🌐 TRUE P2P MODE: Starting embedded blockchain node...');
-      console.log('   You ARE the network - no central server needed!\n');
+    if (options.local) {
+      // LOCAL MODE: Run as a full P2P peer
+      console.log('🌐 LOCAL MODE: Starting embedded blockchain node...');
+      console.log('   Running your own node (not connected to devnet)\n');
       
       embeddedNode = new EmbeddedNode({
         rpcPort: parseInt(options.rpcPort),
@@ -85,8 +86,10 @@ program
         process.exit(1);
       }
     } else {
-      console.log('⚠️  CLIENT-ONLY MODE (not recommended - not true P2P)');
-      console.log(`   Connecting to external node: ${rpcUrl}\n`);
+      // DEFAULT: Connect to devnet
+      console.log('🌐 DEVNET MODE: Connecting to Moltchain network...');
+      console.log(`   RPC: ${rpcUrl}`);
+      console.log('   Use --local to run your own embedded node\n');
     }
     
     // Start auto-updater if enabled
@@ -166,7 +169,7 @@ program
 program
   .command('register')
   .description('Register as a validator on the network')
-  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'http://127.0.0.1:26658')
+  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'https://moltchain-rpc.fly.dev')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
   .action(async (options) => {
     if (!fs.existsSync(options.keyfile)) {
@@ -235,7 +238,7 @@ program
 program
   .command('status')
   .description('Check node and validator status')
-  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'http://127.0.0.1:26658')
+  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'https://moltchain-rpc.fly.dev')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
   .action(async (options) => {
     // Get node status

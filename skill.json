@@ -20,7 +20,7 @@
   "moltbot": {
     "emoji": "⛓️",
     "category": "blockchain",
-    "api_base": "http://localhost:26658",
+    "api_base": "https://moltchain-rpc.fly.dev",
     "skill_files": {
       "main": "https://moltchain.io/skill.md",
       "heartbeat": "https://moltchain.io/heartbeat.md",

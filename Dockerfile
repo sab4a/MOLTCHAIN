@@ -26,9 +26,9 @@ RUN mkdir -p /root/.moltchain
 # Expose ports
 EXPOSE 26658 26656
 
-# Health check
+# Health check (localhost is correct for internal container check)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:26658 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"moltchain_status","params":[],"id":1}' || exit 1
+  CMD curl -f http://127.0.0.1:26658 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"moltchain_status","params":[],"id":1}' || exit 1
 
 # Run node with public binding
 CMD ["moltchain", "start", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0:26656"]

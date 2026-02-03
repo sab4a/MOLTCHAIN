@@ -254,11 +254,9 @@ Edit `moltchain-web/src/utils/rpc.js`:
 
 ```javascript
 const RPC_ENDPOINTS = [
-  'https://rpc1.moltchain.ai',
+  'https://moltchain-rpc.fly.dev',  // Moltchain Devnet
+  'https://rpc1.moltchain.ai',      // Future mainnet
   'https://rpc2.moltchain.ai',
-  'https://rpc3.moltchain.ai',
-  // Fallback to localhost
-  'http://127.0.0.1:26658',
 ];
 ```
 
