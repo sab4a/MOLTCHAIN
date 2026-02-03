@@ -21,6 +21,10 @@ Thumbs.db
 .env
 .env.local
 
+# Keys (validators generate their own)
+validator-key.json
+**/validator-key.json
+
 # Logs
 *.log
 npm-debug.log*
