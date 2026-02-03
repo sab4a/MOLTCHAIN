@@ -20,11 +20,16 @@ const BINARY_NAME = process.platform === 'win32' ? 'moltchain.exe' : 'moltchain'
 const DEFAULT_RPC_PORT = 26658;
 const DEFAULT_P2P_PORT = 26656;
 
+// Fly.io bootstrap node for network discovery
+// Dedicated IP: 50.31.246.124, P2P port: 26656
+// This is the main Moltchain devnet bootstrap node
+const FLY_IO_BOOTSTRAP = '/ip4/50.31.246.124/tcp/26656';
+
 // Bootstrap peers for network discovery
 const BOOTSTRAP_PEERS = [
-  // Add your public bootstrap peers here
+  FLY_IO_BOOTSTRAP,
+  // Additional bootstrap peers can be added here
   // Format: /ip4/{IP}/tcp/{PORT}/p2p/{PEER_ID}
-  // '/ip4/YOUR_SERVER_IP/tcp/26656/p2p/PEER_ID',
 ];
 
 export class EmbeddedNode {
@@ -32,7 +37,8 @@ export class EmbeddedNode {
     this.dataDir = options.dataDir || path.join(os.homedir(), '.moltchain');
     this.rpcPort = options.rpcPort || DEFAULT_RPC_PORT;
     this.p2pPort = options.p2pPort || DEFAULT_P2P_PORT;
-    this.bootstrapPeers = options.bootstrapPeers || BOOTSTRAP_PEERS;
+    // Merge user peers with default bootstrap peers
+    this.bootstrapPeers = [...BOOTSTRAP_PEERS, ...(options.bootstrapPeers || [])];
     this.process = null;
     this.isRunning = false;
     this.peerId = null;

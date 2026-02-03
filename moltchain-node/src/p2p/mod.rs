@@ -91,6 +91,7 @@ pub enum NetworkCommand {
     BroadcastChallenge(CognitiveChallenge),
     BroadcastProof(ChallengeResponse),
     BroadcastBlock(BlockHeader),
+    DialPeer(String),  // Multiaddr as string
 }
 
 /// Events emitted by the P2P network to be handled by state
@@ -136,6 +137,12 @@ impl NetworkHandle {
         self.command_tx.send(NetworkCommand::BroadcastBlock(header)).await?;
         Ok(())
     }
+    
+    /// Dial a peer by multiaddr
+    pub async fn dial_peer(&self, addr: &str) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::DialPeer(addr.to_string())).await?;
+        Ok(())
+    }
 }
 
 impl MoltchainNetwork {
@@ -177,7 +184,7 @@ impl MoltchainNetwork {
         
         let behaviour = MoltchainBehaviour { gossipsub, mdns };
         
-        // Build the swarm
+        // Build the swarm with DNS support for resolving hostnames
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
             .with_tokio()
             .with_tcp(
@@ -185,6 +192,7 @@ impl MoltchainNetwork {
                 noise::Config::new,
                 yamux::Config::default,
             )?
+            .with_dns()?  // Enable DNS resolution for multiaddrs like /dns4/hostname/tcp/port
             .with_behaviour(|_| behaviour)?
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
@@ -465,6 +473,24 @@ impl MoltchainNetwork {
                         tracing::error!("Failed to broadcast block: {}", e);
                     } else {
                         tracing::info!("📢 Broadcasted new block {}", header.height);
+                    }
+                }
+            }
+            NetworkCommand::DialPeer(addr_str) => {
+                match addr_str.parse::<Multiaddr>() {
+                    Ok(addr) => {
+                        tracing::info!("🔗 Dialing peer: {}", addr);
+                        match self.swarm.dial(addr.clone()) {
+                            Ok(_) => {
+                                tracing::info!("📞 Dial initiated to {}", addr);
+                            }
+                            Err(e) => {
+                                tracing::error!("❌ Failed to dial {}: {}", addr, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ Invalid multiaddr '{}': {}", addr_str, e);
                     }
                 }
             }

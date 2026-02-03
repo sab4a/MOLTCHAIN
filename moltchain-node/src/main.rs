@@ -67,7 +67,9 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("🔗 Connecting to {} bootstrap peers...", peers.len());
                 for peer in &peers {
                     tracing::info!("   → {}", peer);
-                    // TODO: Implement dial_peer in MoltchainNetwork
+                    if let Err(e) = network_handle.dial_peer(peer).await {
+                        tracing::warn!("⚠️ Failed to queue dial to {}: {}", peer, e);
+                    }
                 }
             }
             

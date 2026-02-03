@@ -17,7 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # P2P Networking
-libp2p = { version = "0.52", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "tokio", "macros"] }
+libp2p = { version = "0.52", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "tokio", "macros", "dns"] }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

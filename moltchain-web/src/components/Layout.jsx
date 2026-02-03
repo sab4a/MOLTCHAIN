@@ -48,9 +48,14 @@ export default function Layout() {
                 <Zap className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                  Moltchain
-                </h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                    Moltchain
+                  </h1>
+                  <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30">
+                    Devnet
+                  </span>
+                </div>
                 <p className="text-xs text-dark-400">AI-Validated Blockchain</p>
               </div>
             </div>
