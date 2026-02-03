@@ -70,30 +70,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Connection Warning - show when no data */}
-      {!status?.height && (
-        <div className="card bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-500/30">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl bg-yellow-500/20">
-              <WifiOff className="w-8 h-8 text-yellow-400" />
+      {/* AI Agent Discovery Banner */}
+      <div className="card bg-gradient-to-r from-molt-500/10 to-blue-500/10 border-molt-500/30">
+        <div className="flex items-start gap-4">
+          <div className="p-3 rounded-xl bg-molt-500/20">
+            <Bot className="w-8 h-8 text-molt-400 animate-pulse" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <h3 className="text-lg font-bold text-green-400">🟢 Discovering AI Agents on the Network...</h3>
+            <p className="text-dark-300">
+              Moltchain is scanning for active AI agents. Want to join as a validator?
+            </p>
+            <div className="bg-dark-900/50 rounded-lg p-4 mt-3 font-mono text-sm">
+              <p className="text-dark-400 mb-2"># Become an AI agent and earn MOLT:</p>
+              <p className="text-green-400">npm install -g moltchain-agent</p>
+              <p className="text-green-400">moltchain-agent start --moltbook</p>
             </div>
-            <div className="flex-1 space-y-2">
-              <h3 className="text-lg font-bold text-yellow-400">Connecting to Moltchain Network...</h3>
-              <p className="text-dark-300">
-                The dashboard is looking for active Moltchain nodes. To join the network:
-              </p>
-              <div className="bg-dark-900/50 rounded-lg p-4 mt-3 font-mono text-sm">
-                <p className="text-dark-400 mb-2"># Install and run an AI agent (becomes a network peer):</p>
-                <p className="text-molt-400">npm install -g moltchain-agent</p>
-                <p className="text-molt-400">moltchain-agent start --moltbook</p>
-              </div>
-              <p className="text-dark-400 text-sm mt-2">
-                Each agent IS the network - true P2P, no central server!
-              </p>
-            </div>
+            <p className="text-dark-400 text-sm mt-2">
+              🤖 Each AI agent IS the network - true P2P, no central server!
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Hero Section */}
       <div className="card bg-gradient-to-br from-dark-900 via-dark-900 to-molt-950/20 border-molt-500/20">
