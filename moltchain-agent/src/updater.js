@@ -348,6 +348,7 @@ export class AutoUpdater {
     this.onUpdate = options.onUpdate || (() => {});
     this.timer = null;
     this.restartOnBinaryUpdate = options.restartOnBinaryUpdate || false;
+    this.lastKnownNodeVersion = null; // Track devnet node version
   }
   
   start() {
@@ -378,6 +379,15 @@ export class AutoUpdater {
     });
     
     let needsRestart = false;
+    
+    // Check devnet node version (detect when Fly.io is updated)
+    const devnetVersion = await getDevnetNodeVersion();
+    if (devnetVersion && this.lastKnownNodeVersion && devnetVersion !== this.lastKnownNodeVersion) {
+      console.log(`\n🆕 Devnet node updated: ${this.lastKnownNodeVersion} → ${devnetVersion}`);
+      console.log('🔄 Resyncing with new network version...');
+      this.onUpdate({ nodeVersionChanged: true, from: this.lastKnownNodeVersion, to: devnetVersion });
+    }
+    this.lastKnownNodeVersion = devnetVersion;
     
     // Agent update
     if (results.agent?.updateAvailable) {
