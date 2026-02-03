@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
 use super::transaction::{MoltTx, TxResult};
-use super::challenge::{CognitiveChallenge, ChallengeType};
+use super::challenge::{CognitiveChallenge, ChallengeType, CognitivePuzzle};
 use crate::storage::{Storage, PersistedState};
 
 /// Active validator threshold - validators must have been active within this time to be considered online
@@ -298,7 +298,16 @@ impl MoltchainState {
         
         inner.current_committee = Some(committee);
         
-        // Create a transaction verification challenge
+        // Generate a cognitive puzzle for this challenge
+        let puzzle = CognitivePuzzle::generate(&challenge_hash, 1);
+        
+        tracing::info!(
+            "🧠 Cognitive puzzle generated: {:?} - '{}'",
+            puzzle.puzzle_type,
+            &puzzle.prompt[..50.min(puzzle.prompt.len())]
+        );
+        
+        // Create a transaction verification challenge with cognitive puzzle
         let challenge = CognitiveChallenge {
             challenge_type: ChallengeType::TransactionVerification,
             challenge_hash,
@@ -309,6 +318,7 @@ impl MoltchainState {
                 .collect(),
             created_at: now,
             expires_at: now + 60, // 60 second window
+            cognitive_puzzle: Some(puzzle),
         };
         
         inner.current_challenge = Some(challenge.clone());

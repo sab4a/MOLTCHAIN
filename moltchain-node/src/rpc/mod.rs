@@ -359,6 +359,8 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
                         signature: req.signature.clone(),
                         verdict_digest: req.verdict_digest.clone(),
                         tx_verdicts: None,
+                        puzzle_answer: None,
+                        submitted_at_ms: None,
                     };
                     let network = network.lock().await;
                     if let Err(e) = network.broadcast_proof(proof_response).await {
