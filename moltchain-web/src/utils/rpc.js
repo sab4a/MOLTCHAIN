@@ -5,19 +5,17 @@
  * If one node goes down, automatically tries others.
  */
 
-// Multiple RPC endpoints for failover (add your public nodes here)
+// Multiple RPC endpoints for failover
 const RPC_ENDPOINTS = [
-  import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:26658',
-  // Add more public endpoints as the network grows:
-  // 'https://rpc1.moltchain.ai',
-  // 'https://rpc2.moltchain.ai',
+  import.meta.env.VITE_RPC_URL,
+  'https://moltchain-rpc.fly.dev',  // Public Fly.io node
+  'http://127.0.0.1:26658',         // Local fallback
 ].filter(Boolean);
 
 const WS_ENDPOINTS = [
-  import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:26658',
-  // Add more public WebSocket endpoints:
-  // 'wss://rpc1.moltchain.ai',
-  // 'wss://rpc2.moltchain.ai',
+  import.meta.env.VITE_WS_URL,
+  'wss://moltchain-rpc.fly.dev',    // Public Fly.io WebSocket
+  'ws://127.0.0.1:26658',           // Local fallback  
 ].filter(Boolean);
 
 // Track which endpoint is currently working
