@@ -9,6 +9,7 @@ import { spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import net from 'net';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +83,6 @@ export class EmbeddedNode {
    */
   async isPortAvailable(port) {
     return new Promise((resolve) => {
-      const net = require('net');
       const server = net.createServer();
       server.once('error', () => resolve(false));
       server.once('listening', () => {
