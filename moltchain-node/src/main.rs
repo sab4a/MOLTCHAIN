@@ -183,6 +183,7 @@ async fn main() -> anyhow::Result<()> {
                             validator_count: state_for_broadcast.get_all_validators().len(),
                             active_validator_count: state_for_broadcast.get_active_validator_count(),
                             has_active_challenge: current_challenge.is_some(),
+                            node_version: p2p::NODE_VERSION.to_string(),
                         };
 
                         let validators: Vec<rpc::ValidatorInfoResponse> = state_for_broadcast.get_all_validators()

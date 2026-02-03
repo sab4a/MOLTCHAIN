@@ -9,8 +9,9 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 
-const GITHUB_API = 'https://api.github.com/repos/moltchain/moltchain-node/releases/latest';
+const GITHUB_API = 'https://api.github.com/repos/sab4a/MOLTCHAIN/releases/latest';
 const NPM_REGISTRY = 'https://registry.npmjs.org/moltchain-agent';
+const DEVNET_RPC = 'https://moltchain-rpc.fly.dev';
 
 /**
  * Get current installed version
@@ -118,6 +119,28 @@ export async function installUpdate(version, silent = false) {
       console.log('💡 Try manually: npm install -g moltchain-agent@latest');
     }
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get the devnet node version from RPC
+ */
+export async function getDevnetNodeVersion() {
+  try {
+    const response = await fetch(DEVNET_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'moltchain_status',
+        params: [],
+      }),
+    });
+    const json = await response.json();
+    return json.result?.node_version || null;
+  } catch {
+    return null;
   }
 }
 
@@ -404,5 +427,6 @@ export default {
   getCurrentBinaryVersion,
   installBinaryUpdate,
   checkAllUpdates,
+  getDevnetNodeVersion,
   AutoUpdater
 };

@@ -19,11 +19,15 @@ use tokio::sync::mpsc;
 
 use crate::stf::{MoltchainState, CognitiveChallenge, ChallengeResponse, BlockHeader};
 
+/// Current node version - used for P2P compatibility checks
+pub const NODE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Topics for gossipsub
 const TOPIC_CHALLENGES: &str = "moltchain/challenges/1.0.0";
 const TOPIC_PROOFS: &str = "moltchain/proofs/1.0.0";
 const TOPIC_BLOCKS: &str = "moltchain/blocks/1.0.0";
 const TOPIC_STATE_SYNC: &str = "moltchain/state-sync/1.0.0";
+const TOPIC_UPGRADES: &str = "moltchain/upgrades/1.0.0";
 
 /// Network behaviour combining gossipsub and mDNS
 #[derive(NetworkBehaviour)]

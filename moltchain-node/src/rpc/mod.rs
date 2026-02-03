@@ -65,6 +65,7 @@ pub struct NodeStatusResponse {
     pub validator_count: usize,
     pub active_validator_count: usize, // Online in last 5 minutes
     pub has_active_challenge: bool,
+    pub node_version: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -216,6 +217,7 @@ impl MoltchainRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
+            node_version: crate::p2p::NODE_VERSION.to_string(),
         };
 
         let validators: Vec<ValidatorInfoResponse> = self.state.get_all_validators()
@@ -262,6 +264,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
+            node_version: crate::p2p::NODE_VERSION.to_string(),
         })
     }
     
