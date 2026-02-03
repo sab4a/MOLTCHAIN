@@ -178,6 +178,50 @@ impl MoltchainState {
         self.storage.save_state(&persisted)
     }
 
+    /// Apply state received from a peer (state sync)
+    /// Only applies if peer state is ahead of ours
+    pub fn apply_peer_state(
+        &self, 
+        height: u64, 
+        state_root: [u8; 32],
+        total_supply: u64,
+        validators: Vec<ValidatorInfo>,
+    ) -> bool {
+        let mut inner = self.inner.write().unwrap();
+        
+        // Only apply if peer is ahead
+        if height <= inner.height {
+            return false;
+        }
+        
+        tracing::info!("🔄 Applying peer state: height {} -> {}, {} validators",
+            inner.height, height, validators.len());
+        
+        // Update state
+        inner.height = height;
+        inner.state_root = state_root;
+        inner.total_supply = total_supply;
+        
+        // Update validators
+        inner.validators.clear();
+        for v in validators {
+            inner.validators.insert(hex::encode(&v.public_key), v);
+        }
+        
+        // Clear current challenge (peer will broadcast new one)
+        inner.current_challenge = None;
+        inner.current_committee = None;
+        
+        drop(inner);
+        
+        // Persist to disk
+        if let Err(e) = self.save() {
+            tracing::error!("Failed to save synced state: {}", e);
+        }
+        
+        true
+    }
+
     /// Select committee members based on reputation-weighted random selection
     /// ONLY selects from ACTIVE validators (online in last 5 minutes)
     fn select_committee(&self, inner: &StateInner, seed: &[u8; 32]) -> Vec<String> {

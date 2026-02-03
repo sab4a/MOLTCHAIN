@@ -8,6 +8,11 @@ primary_region = 'iad'
 
 [build]
 
+# Persistent storage for blockchain state
+[mounts]
+  source = 'moltchain_data'
+  destination = '/root/.moltchain'
+
 # RPC endpoint (HTTP/WebSocket)
 [http_service]
   internal_port = 26658

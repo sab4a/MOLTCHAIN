@@ -71,6 +71,15 @@ async fn main() -> anyhow::Result<()> {
                         tracing::warn!("⚠️ Failed to queue dial to {}: {}", peer, e);
                     }
                 }
+                
+                // Request state sync from peers if we're starting fresh
+                if state.get_height() == 0 {
+                    tracing::info!("📥 Requesting state sync from peers...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // Wait for connections
+                    if let Err(e) = network_handle.request_state_sync().await {
+                        tracing::warn!("⚠️ Failed to request state sync: {}", e);
+                    }
+                }
             }
             
             // Spawn network event handler
@@ -92,6 +101,47 @@ async fn main() -> anyhow::Result<()> {
                         }
                         p2p::NetworkEvent::PeerDisconnected(peer_id) => {
                             tracing::info!("📴 Peer disconnected: {}", peer_id);
+                        }
+                        p2p::NetworkEvent::StateReceived(state_msg) => {
+                            tracing::info!("📥 Received state from peer: height={}, validators={}",
+                                state_msg.height, state_msg.validators.len());
+                            
+                            // Convert to ValidatorInfo and apply
+                            let validators: Vec<stf::ValidatorInfo> = state_msg.validators.iter()
+                                .filter_map(|v| {
+                                    let pubkey_bytes = hex::decode(&v.public_key).ok()?;
+                                    if pubkey_bytes.len() != 32 { return None; }
+                                    let mut pubkey = [0u8; 32];
+                                    pubkey.copy_from_slice(&pubkey_bytes);
+                                    Some(stf::ValidatorInfo {
+                                        public_key: pubkey,
+                                        balance: v.balance,
+                                        validations_count: v.validations_count,
+                                        reputation_score: v.reputation_score,
+                                        last_active_timestamp: v.last_active_timestamp,
+                                        last_validation_height: 0,
+                                        is_online: true,
+                                    })
+                                })
+                                .collect();
+                            
+                            let state_root_bytes = hex::decode(&state_msg.state_root).unwrap_or_default();
+                            let mut state_root = [0u8; 32];
+                            if state_root_bytes.len() == 32 {
+                                state_root.copy_from_slice(&state_root_bytes);
+                            }
+                            
+                            if state_for_events.apply_peer_state(
+                                state_msg.height, 
+                                state_root, 
+                                state_msg.total_supply, 
+                                validators
+                            ) {
+                                tracing::info!("✅ State synced! Now at height {}", state_msg.height);
+                            }
+                        }
+                        p2p::NetworkEvent::StateRequested(peer_id) => {
+                            tracing::debug!("Peer {} requested our state", &peer_id[..16.min(peer_id.len())]);
                         }
                     }
                 }

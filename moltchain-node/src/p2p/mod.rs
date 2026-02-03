@@ -23,6 +23,7 @@ use crate::stf::{MoltchainState, CognitiveChallenge, ChallengeResponse, BlockHea
 const TOPIC_CHALLENGES: &str = "moltchain/challenges/1.0.0";
 const TOPIC_PROOFS: &str = "moltchain/proofs/1.0.0";
 const TOPIC_BLOCKS: &str = "moltchain/blocks/1.0.0";
+const TOPIC_STATE_SYNC: &str = "moltchain/state-sync/1.0.0";
 
 /// Network behaviour combining gossipsub and mDNS
 #[derive(NetworkBehaviour)]
@@ -60,6 +61,10 @@ pub enum P2PMessage {
     Proof(ProofMessage),
     /// Broadcast a finalized block
     Block(BlockMessage),
+    /// Request state sync from peers
+    StateRequest(StateRequestMessage),
+    /// Respond with full state snapshot
+    StateResponse(StateResponseMessage),
 }
 
 /// Challenge broadcast message
@@ -85,6 +90,33 @@ pub struct BlockMessage {
     pub state_root_hex: String,
 }
 
+/// State sync request - sent by new nodes joining the network
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StateRequestMessage {
+    pub requester_peer_id: String,
+    pub current_height: u64,  // 0 if starting fresh
+}
+
+/// State sync response - full state snapshot from a peer
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StateResponseMessage {
+    pub responder_peer_id: String,
+    pub height: u64,
+    pub state_root: String,
+    pub total_supply: u64,
+    pub validators: Vec<ValidatorSnapshot>,
+}
+
+/// Validator info for state sync
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidatorSnapshot {
+    pub public_key: String,
+    pub balance: u64,
+    pub validations_count: u64,
+    pub reputation_score: u64,
+    pub last_active_timestamp: u64,
+}
+
 /// Commands that can be sent to the P2P network from other parts of the system
 #[derive(Clone, Debug)]
 pub enum NetworkCommand {
@@ -92,6 +124,8 @@ pub enum NetworkCommand {
     BroadcastProof(ChallengeResponse),
     BroadcastBlock(BlockHeader),
     DialPeer(String),  // Multiaddr as string
+    RequestStateSync,  // Request state from peers
+    BroadcastState(StateResponseMessage),  // Send state to peers
 }
 
 /// Events emitted by the P2P network to be handled by state
@@ -102,6 +136,8 @@ pub enum NetworkEvent {
     BlockReceived(BlockMessage),
     PeerConnected(String),
     PeerDisconnected(String),
+    StateReceived(StateResponseMessage),  // Received state from peer
+    StateRequested(String),  // Peer requested our state
 }
 
 /// The P2P network handler
@@ -110,6 +146,7 @@ pub struct MoltchainNetwork {
     challenge_topic: IdentTopic,
     proof_topic: IdentTopic,
     block_topic: IdentTopic,
+    state_sync_topic: IdentTopic,
     local_peer_id: String,
     state: MoltchainState,
     command_rx: mpsc::Receiver<NetworkCommand>,
@@ -141,6 +178,18 @@ impl NetworkHandle {
     /// Dial a peer by multiaddr
     pub async fn dial_peer(&self, addr: &str) -> anyhow::Result<()> {
         self.command_tx.send(NetworkCommand::DialPeer(addr.to_string())).await?;
+        Ok(())
+    }
+    
+    /// Request state sync from peers (for new nodes joining)
+    pub async fn request_state_sync(&self) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::RequestStateSync).await?;
+        Ok(())
+    }
+    
+    /// Broadcast our state to peers
+    pub async fn broadcast_state(&self, state: StateResponseMessage) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::BroadcastState(state)).await?;
         Ok(())
     }
 }
@@ -201,11 +250,13 @@ impl MoltchainNetwork {
         let challenge_topic = IdentTopic::new(TOPIC_CHALLENGES);
         let proof_topic = IdentTopic::new(TOPIC_PROOFS);
         let block_topic = IdentTopic::new(TOPIC_BLOCKS);
+        let state_sync_topic = IdentTopic::new(TOPIC_STATE_SYNC);
         
         // Subscribe to topics
         swarm.behaviour_mut().gossipsub.subscribe(&challenge_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&proof_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&block_topic)?;
+        swarm.behaviour_mut().gossipsub.subscribe(&state_sync_topic)?;
         
         // Listen on all interfaces
         let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", port).parse()?;
@@ -220,6 +271,7 @@ impl MoltchainNetwork {
             challenge_topic,
             proof_topic,
             block_topic,
+            state_sync_topic,
             local_peer_id: local_peer_id.to_string(),
             state,
             command_rx,
@@ -290,6 +342,9 @@ impl MoltchainNetwork {
                     }
                     TOPIC_BLOCKS => {
                         self.handle_block_message(&message.data).await;
+                    }
+                    TOPIC_STATE_SYNC => {
+                        self.handle_state_sync_message(&message.data).await;
                     }
                     _ => {}
                 }
@@ -493,6 +548,107 @@ impl MoltchainNetwork {
                         tracing::error!("❌ Invalid multiaddr '{}': {}", addr_str, e);
                     }
                 }
+            }
+            NetworkCommand::RequestStateSync => {
+                // Request state from peers
+                let msg = StateRequestMessage {
+                    requester_peer_id: self.local_peer_id.clone(),
+                    current_height: self.state.get_height(),
+                };
+                
+                if let Ok(data) = serde_json::to_vec(&msg) {
+                    if let Err(e) = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(self.state_sync_topic.clone(), data)
+                    {
+                        tracing::error!("Failed to request state sync: {}", e);
+                    } else {
+                        tracing::info!("📥 Requested state sync from peers (our height: {})", msg.current_height);
+                    }
+                }
+            }
+            NetworkCommand::BroadcastState(state_response) => {
+                // Broadcast our state to peers
+                if let Ok(data) = serde_json::to_vec(&state_response) {
+                    if let Err(e) = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(self.state_sync_topic.clone(), data)
+                    {
+                        tracing::error!("Failed to broadcast state: {}", e);
+                    } else {
+                        tracing::info!("📤 Broadcasted state snapshot (height: {}, {} validators)", 
+                            state_response.height, state_response.validators.len());
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Handle state sync messages (requests and responses)
+    async fn handle_state_sync_message(&mut self, data: &[u8]) {
+        // Try to parse as a request first
+        if let Ok(request) = serde_json::from_slice::<StateRequestMessage>(data) {
+            // Someone is asking for state - respond if we have higher state
+            let our_height = self.state.get_height();
+            if our_height > request.current_height {
+                tracing::info!("📤 Peer {} requested state (their height: {}, ours: {})",
+                    &request.requester_peer_id[..16.min(request.requester_peer_id.len())],
+                    request.current_height,
+                    our_height
+                );
+                
+                // Build and send state snapshot
+                let validators: Vec<ValidatorSnapshot> = self.state.get_all_validators()
+                    .into_iter()
+                    .map(|v| ValidatorSnapshot {
+                        public_key: hex::encode(v.public_key),
+                        balance: v.balance,
+                        validations_count: v.validations_count,
+                        reputation_score: v.reputation_score,
+                        last_active_timestamp: v.last_active_timestamp,
+                    })
+                    .collect();
+                
+                let response = StateResponseMessage {
+                    responder_peer_id: self.local_peer_id.clone(),
+                    height: our_height,
+                    state_root: hex::encode(self.state.get_state_root()),
+                    total_supply: self.state.get_total_supply(),
+                    validators,
+                };
+                
+                if let Ok(response_data) = serde_json::to_vec(&response) {
+                    let _ = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(self.state_sync_topic.clone(), response_data);
+                }
+            }
+            
+            // Emit event
+            let _ = self.event_tx.send(NetworkEvent::StateRequested(request.requester_peer_id)).await;
+            return;
+        }
+        
+        // Try to parse as a response
+        if let Ok(response) = serde_json::from_slice::<StateResponseMessage>(data) {
+            let our_height = self.state.get_height();
+            
+            // Only accept state that's newer than ours
+            if response.height > our_height {
+                tracing::info!("📥 Received state from peer {} (height: {}, {} validators)",
+                    &response.responder_peer_id[..16.min(response.responder_peer_id.len())],
+                    response.height,
+                    response.validators.len()
+                );
+                
+                // Emit event for external handler to apply state
+                let _ = self.event_tx.send(NetworkEvent::StateReceived(response)).await;
+            } else {
+                tracing::debug!("Ignoring older state from peer (their height: {}, ours: {})",
+                    response.height, our_height);
             }
         }
     }
