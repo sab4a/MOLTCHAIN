@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /**
- * Moltchain AI Agent - Validator Client
+ * Moltchain AI Agent - P2P Validator Node
  * 
- * This agent connects to a Moltchain node and:
- * 1. Listens for new cognitive challenges
- * 2. Solves the challenge (validates transactions)
- * 3. Signs and submits proofs to earn MOLT tokens
- * 4. Socializes on Moltbook (AI social network)
+ * Each agent IS the network - true P2P architecture!
+ * 
+ * This agent:
+ * 1. Runs its own embedded blockchain node (full peer)
+ * 2. Listens for new cognitive challenges
+ * 3. Solves the challenge (validates transactions)
+ * 4. Signs and submits proofs to earn MOLT tokens
+ * 5. Socializes on Moltbook (AI social network)
+ * 
+ * No central server - if one agent goes down, others continue!
  */
 
 import { program } from 'commander';
@@ -20,33 +25,41 @@ import path from 'path';
 
 program
   .name('moltchain-agent')
-  .description('AI Agent for Moltchain validator network')
+  .description('P2P AI Agent for Moltchain - each agent is a full network peer!')
   .version(getCurrentVersion());
 
 program
   .command('start')
-  .description('Start the AI validator agent')
-  .option('-r, --rpc <url>', 'Moltchain node RPC URL (auto-detect if running embedded)')
+  .description('Start the AI validator agent (runs embedded P2P node by default)')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
   .option('-i, --interval <ms>', 'Polling interval in milliseconds', '5000')
   .option('--auto-update', 'Enable automatic updates (agent + binary)')
   .option('--update-interval <hours>', 'Update check interval in hours', '6')
   .option('--auto-restart', 'Auto-restart when binary is updated')
   .option('--moltbook', 'Enable Moltbook social integration')
-  .option('--embedded', 'Run embedded node (true P2P mode - each agent is a full peer)')
-  .option('--rpc-port <port>', 'RPC port for embedded node', '26658')
-  .option('--p2p-port <port>', 'P2P port for embedded node', '26656')
+  .option('--rpc-port <port>', 'RPC port for node', '26658')
+  .option('--p2p-port <port>', 'P2P port for node', '26656')
   .option('--peer <multiaddr>', 'Bootstrap peer multiaddr (can be repeated)', (val, arr) => { arr.push(val); return arr; }, [])
+  .option('--client-only', 'Connect to external node instead of running embedded (not recommended)')
+  .option('-r, --rpc <url>', 'External RPC URL (only with --client-only)', 'http://127.0.0.1:26658')
   .action(async (options) => {
-    console.log('🤖 Starting Moltchain AI Validator Agent...');
+    console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║           🤖 MOLTCHAIN AI VALIDATOR AGENT 🤖                 ║
+║                                                              ║
+║   True P2P Network - Each Agent IS the Network!             ║
+║   No central server. Fully decentralized.                   ║
+╚══════════════════════════════════════════════════════════════╝
+`);
     
-    // Start embedded node if requested
+    // TRUE P2P MODE BY DEFAULT
     let embeddedNode = null;
-    let rpcUrl = options.rpc || 'http://127.0.0.1:26658';
+    let rpcUrl = options.rpc;
     
-    if (options.embedded) {
-      console.log('\n🌐 TRUE P2P MODE: Running as a full peer node');
-      console.log('   Each agent IS the network - no central server needed!\n');
+    if (!options.clientOnly) {
+      // DEFAULT: Run as a full P2P peer
+      console.log('🌐 TRUE P2P MODE: Starting embedded blockchain node...');
+      console.log('   You ARE the network - no central server needed!\n');
       
       embeddedNode = new EmbeddedNode({
         rpcPort: parseInt(options.rpcPort),
@@ -57,15 +70,23 @@ program
       const started = await embeddedNode.start();
       if (started) {
         rpcUrl = embeddedNode.getRpcUrl();
-        console.log(`\n📡 Embedded node RPC: ${rpcUrl}`);
+        console.log(`\n✅ P2P Node Active!`);
+        console.log(`   RPC: ${rpcUrl}`);
+        console.log(`   P2P: 0.0.0.0:${embeddedNode.p2pPort}`);
         
         if (embeddedNode.peerId) {
-          console.log(`🔗 Share this with other agents to connect:`);
-          console.log(`   --peer "/ip4/YOUR_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}"`);
+          console.log(`\n🔗 Share this with other agents to connect:`);
+          console.log(`   moltchain-agent start --peer "/ip4/YOUR_PUBLIC_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}"\n`);
         }
       } else {
-        console.log('⚠️  Falling back to client mode (connecting to external node)');
+        console.error('❌ Failed to start embedded node!');
+        console.log('   Make sure moltchain binary is installed:');
+        console.log('   npx moltchain-node-cli install\n');
+        process.exit(1);
       }
+    } else {
+      console.log('⚠️  CLIENT-ONLY MODE (not recommended - not true P2P)');
+      console.log(`   Connecting to external node: ${rpcUrl}\n`);
     }
     
     // Start auto-updater if enabled
