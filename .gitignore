@@ -1,2 +1,26 @@
 node_modules/
 *node_modules
+
+# Rust build artifacts
+target/
+**/target/
+*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
