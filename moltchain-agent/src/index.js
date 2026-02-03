@@ -437,4 +437,256 @@ moltbookCmd
     }
   });
 
+// =============================================================================
+// DAEMON MANAGEMENT - Auto-start on system boot
+// =============================================================================
+
+const daemonCmd = program
+  .command('daemon')
+  .description('Manage agent as a system service (auto-start on boot)');
+
+daemonCmd
+  .command('install')
+  .description('Install agent as a system service')
+  .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
+  .option('--moltbook', 'Enable Moltbook social integration')
+  .option('--auto-update', 'Enable automatic updates')
+  .action(async (options) => {
+    const platform = process.platform;
+    const agentDir = process.cwd();
+    const keyfilePath = path.resolve(options.keyfile);
+    const nodePath = process.execPath;
+    const indexPath = path.join(agentDir, 'src', 'index.js');
+    
+    // Build the command args
+    let args = ['start', '-k', keyfilePath];
+    if (options.moltbook) args.push('--moltbook');
+    if (options.autoUpdate) args.push('--auto-update');
+    
+    if (platform === 'darwin') {
+      // macOS: Use launchd
+      const plistName = 'com.moltchain.agent';
+      const plistPath = path.join(process.env.HOME, 'Library', 'LaunchAgents', `${plistName}.plist`);
+      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'moltchain-agent.log');
+      
+      const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${plistName}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${nodePath}</string>
+        <string>${indexPath}</string>
+${args.map(a => `        <string>${a}</string>`).join('\n')}
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${agentDir}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${logPath}</string>
+    <key>StandardErrorPath</key>
+    <string>${logPath}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>`;
+      
+      // Ensure LaunchAgents directory exists
+      const launchAgentsDir = path.dirname(plistPath);
+      if (!fs.existsSync(launchAgentsDir)) {
+        fs.mkdirSync(launchAgentsDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(plistPath, plistContent);
+      console.log(`✅ Created launchd plist: ${plistPath}`);
+      console.log(`📋 Log file: ${logPath}`);
+      console.log(`\n🚀 To start the daemon now, run:`);
+      console.log(`   launchctl load ${plistPath}`);
+      console.log(`\n📊 To check status:`);
+      console.log(`   launchctl list | grep moltchain`);
+      console.log(`\n🛑 To stop:`);
+      console.log(`   launchctl unload ${plistPath}`);
+      
+    } else if (platform === 'linux') {
+      // Linux: Use systemd
+      const serviceName = 'moltchain-agent';
+      const servicePath = path.join(process.env.HOME, '.config', 'systemd', 'user', `${serviceName}.service`);
+      
+      const serviceContent = `[Unit]
+Description=Moltchain AI Validator Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${agentDir}
+ExecStart=${nodePath} ${indexPath} ${args.join(' ')}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+`;
+      
+      // Ensure systemd user directory exists
+      const systemdDir = path.dirname(servicePath);
+      if (!fs.existsSync(systemdDir)) {
+        fs.mkdirSync(systemdDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(servicePath, serviceContent);
+      console.log(`✅ Created systemd service: ${servicePath}`);
+      console.log(`\n🚀 To enable and start the daemon, run:`);
+      console.log(`   systemctl --user daemon-reload`);
+      console.log(`   systemctl --user enable ${serviceName}`);
+      console.log(`   systemctl --user start ${serviceName}`);
+      console.log(`\n📊 To check status:`);
+      console.log(`   systemctl --user status ${serviceName}`);
+      console.log(`\n📋 To view logs:`);
+      console.log(`   journalctl --user -u ${serviceName} -f`);
+      console.log(`\n🛑 To stop:`);
+      console.log(`   systemctl --user stop ${serviceName}`);
+      
+    } else if (platform === 'win32') {
+      // Windows: Create a batch script for Task Scheduler
+      const batPath = path.join(agentDir, 'start-agent.bat');
+      const batContent = `@echo off
+cd /d "${agentDir}"
+"${nodePath}" "${indexPath}" ${args.join(' ')}
+`;
+      fs.writeFileSync(batPath, batContent);
+      console.log(`✅ Created startup script: ${batPath}`);
+      console.log(`\n🚀 To auto-start on Windows:`);
+      console.log(`   1. Open Task Scheduler (taskschd.msc)`);
+      console.log(`   2. Create Basic Task > "Moltchain Agent"`);
+      console.log(`   3. Trigger: "When the computer starts"`);
+      console.log(`   4. Action: Start a program > "${batPath}"`);
+      console.log(`   5. Check "Run whether user is logged on or not"`);
+    } else {
+      console.log(`❌ Unsupported platform: ${platform}`);
+      console.log('   Supported: macOS (darwin), Linux, Windows');
+    }
+  });
+
+daemonCmd
+  .command('uninstall')
+  .description('Remove the system service')
+  .action(async () => {
+    const platform = process.platform;
+    
+    if (platform === 'darwin') {
+      const plistPath = path.join(process.env.HOME, 'Library', 'LaunchAgents', 'com.moltchain.agent.plist');
+      
+      if (fs.existsSync(plistPath)) {
+        console.log('🛑 Unloading daemon...');
+        const { execSync } = await import('child_process');
+        try {
+          execSync(`launchctl unload ${plistPath}`, { stdio: 'inherit' });
+        } catch (e) {
+          // May fail if not loaded, that's ok
+        }
+        fs.unlinkSync(plistPath);
+        console.log('✅ Daemon uninstalled');
+      } else {
+        console.log('ℹ️  Daemon not installed');
+      }
+      
+    } else if (platform === 'linux') {
+      const servicePath = path.join(process.env.HOME, '.config', 'systemd', 'user', 'moltchain-agent.service');
+      
+      if (fs.existsSync(servicePath)) {
+        console.log('🛑 Stopping and disabling daemon...');
+        const { execSync } = await import('child_process');
+        try {
+          execSync('systemctl --user stop moltchain-agent', { stdio: 'inherit' });
+          execSync('systemctl --user disable moltchain-agent', { stdio: 'inherit' });
+        } catch (e) {
+          // May fail if not running
+        }
+        fs.unlinkSync(servicePath);
+        console.log('✅ Daemon uninstalled');
+      } else {
+        console.log('ℹ️  Daemon not installed');
+      }
+      
+    } else if (platform === 'win32') {
+      const batPath = path.join(process.cwd(), 'start-agent.bat');
+      if (fs.existsSync(batPath)) {
+        fs.unlinkSync(batPath);
+        console.log('✅ Startup script removed');
+        console.log('ℹ️  Remember to remove the task from Task Scheduler manually');
+      } else {
+        console.log('ℹ️  Startup script not found');
+      }
+    }
+  });
+
+daemonCmd
+  .command('status')
+  .description('Check if daemon is running')
+  .action(async () => {
+    const platform = process.platform;
+    const { execSync } = await import('child_process');
+    
+    try {
+      if (platform === 'darwin') {
+        const result = execSync('launchctl list | grep moltchain', { encoding: 'utf-8' });
+        if (result.includes('moltchain')) {
+          const parts = result.trim().split(/\s+/);
+          const pid = parts[0];
+          const status = parts[1];
+          console.log('✅ Daemon is running');
+          console.log(`   PID: ${pid === '-' ? 'Not running' : pid}`);
+          console.log(`   Exit status: ${status}`);
+        }
+      } else if (platform === 'linux') {
+        execSync('systemctl --user status moltchain-agent', { stdio: 'inherit' });
+      } else {
+        console.log('ℹ️  Check Task Scheduler for status on Windows');
+      }
+    } catch (e) {
+      console.log('ℹ️  Daemon not running or not installed');
+    }
+  });
+
+daemonCmd
+  .command('logs')
+  .description('View daemon logs')
+  .option('-f, --follow', 'Follow log output')
+  .option('-n, --lines <n>', 'Number of lines to show', '50')
+  .action(async (options) => {
+    const platform = process.platform;
+    const { spawn } = await import('child_process');
+    
+    if (platform === 'darwin') {
+      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'moltchain-agent.log');
+      if (fs.existsSync(logPath)) {
+        const args = options.follow 
+          ? ['-f', '-n', options.lines, logPath]
+          : ['-n', options.lines, logPath];
+        spawn('tail', args, { stdio: 'inherit' });
+      } else {
+        console.log('ℹ️  No logs found. Has the daemon started?');
+      }
+    } else if (platform === 'linux') {
+      const args = ['--user', '-u', 'moltchain-agent', '-n', options.lines];
+      if (options.follow) args.push('-f');
+      spawn('journalctl', args, { stdio: 'inherit' });
+    } else {
+      console.log('ℹ️  Check Task Scheduler logs on Windows');
+    }
+  });
+
 program.parse();
