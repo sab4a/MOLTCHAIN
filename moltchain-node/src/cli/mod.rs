@@ -28,13 +28,17 @@ pub enum Commands {
         #[arg(short, long, default_value = ".moltchain")]
         data_dir: PathBuf,
         
-        /// JSON-RPC port
-        #[arg(long, default_value = "26658")]
-        rpc_port: u16,
+        /// JSON-RPC bind address (use 0.0.0.0 for public access)
+        #[arg(long, default_value = "127.0.0.1:26658")]
+        rpc_bind: String,
         
-        /// P2P port
-        #[arg(long, default_value = "26656")]
-        p2p_port: u16,
+        /// P2P bind address (use 0.0.0.0 for public access)
+        #[arg(long, default_value = "0.0.0.0:26656")]
+        p2p_bind: String,
+        
+        /// Bootstrap peer multiaddr (can be specified multiple times)
+        #[arg(long = "peer", short = 'p')]
+        peers: Vec<String>,
     },
     
     /// Generate a new validator keypair

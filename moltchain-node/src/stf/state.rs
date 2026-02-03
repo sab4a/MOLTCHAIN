@@ -13,6 +13,9 @@ use super::transaction::{MoltTx, TxResult};
 use super::challenge::{CognitiveChallenge, ChallengeType};
 use crate::storage::{Storage, PersistedState};
 
+/// Active validator threshold - validators must have been active within this time to be considered online
+const ACTIVE_THRESHOLD_SECS: u64 = 300; // 5 minutes
+
 /// Validator information
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidatorInfo {
@@ -21,6 +24,10 @@ pub struct ValidatorInfo {
     pub validations_count: u64,
     pub reputation_score: u64,
     pub last_validation_height: u64,
+    #[serde(default)]
+    pub last_active_timestamp: u64, // Unix timestamp of last activity
+    #[serde(default)]
+    pub is_online: bool,            // Considered online if active in last 5 minutes
 }
 
 /// Transaction record for history
@@ -172,14 +179,29 @@ impl MoltchainState {
     }
 
     /// Select committee members based on reputation-weighted random selection
+    /// ONLY selects from ACTIVE validators (online in last 5 minutes)
     fn select_committee(&self, inner: &StateInner, seed: &[u8; 32]) -> Vec<String> {
-        let validators: Vec<_> = inner.validators.iter().collect();
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        // Filter to only ACTIVE validators (online in last 5 minutes)
+        let validators: Vec<_> = inner.validators.iter()
+            .filter(|(_, v)| {
+                let time_since_active = current_time.saturating_sub(v.last_active_timestamp);
+                time_since_active <= ACTIVE_THRESHOLD_SECS
+            })
+            .collect();
         
         if validators.is_empty() {
+            tracing::warn!("⚠️ No active validators available for committee selection!");
             return Vec::new();
         }
         
-        // Calculate total reputation weight
+        tracing::info!("🤖 Selecting committee from {} ACTIVE validators", validators.len());
+        
+        // Calculate total reputation weight from active validators only
         let total_weight: u64 = validators.iter()
             .map(|(_, v)| v.reputation_score.max(1))
             .sum();
@@ -464,6 +486,10 @@ impl MoltchainState {
         
         // 5. Update validator stats (always, even if block not finalized yet)
         let height = inner.height;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         
         let validator = inner.validators
             .entry(pubkey_hex.clone())
@@ -473,10 +499,14 @@ impl MoltchainState {
                 validations_count: 0,
                 reputation_score: 100,
                 last_validation_height: 0,
+                last_active_timestamp: now,
+                is_online: true,
             });
         
         validator.validations_count += 1;
         validator.last_validation_height = height;
+        validator.last_active_timestamp = now;
+        validator.is_online = true;
         validator.reputation_score = (validator.reputation_score + 1).min(1000);
         
         // 6. If threshold reached, finalize block and distribute rewards
@@ -626,6 +656,11 @@ impl MoltchainState {
         // Execute transfer
         inner.validators.get_mut(&from_hex).unwrap().balance -= amount;
         
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
         let recipient = inner.validators
             .entry(to_hex.clone())
             .or_insert_with(|| ValidatorInfo {
@@ -634,6 +669,8 @@ impl MoltchainState {
                 validations_count: 0,
                 reputation_score: 50,
                 last_validation_height: 0,
+                last_active_timestamp: now,
+                is_online: false, // Recipient not necessarily online
             });
         recipient.balance += amount;
         
@@ -683,12 +720,19 @@ impl MoltchainState {
         // Initial funding for new validators
         const INITIAL_VALIDATOR_BALANCE: u64 = 100;
         
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
         inner.validators.insert(pubkey_hex.clone(), ValidatorInfo {
             public_key: *public_key,
             balance: INITIAL_VALIDATOR_BALANCE,
             validations_count: 0,
             reputation_score: 50, // Start with neutral reputation
             last_validation_height: 0,
+            last_active_timestamp: now,
+            is_online: true, // New registrations are considered online
         });
         
         // Update total supply
@@ -835,6 +879,46 @@ impl MoltchainState {
     /// Get all validators
     pub fn get_all_validators(&self) -> Vec<ValidatorInfo> {
         self.inner.read().unwrap().validators.values().cloned().collect()
+    }
+    
+    /// Get count of active validators (online in last 5 minutes)
+    pub fn get_active_validator_count(&self) -> usize {
+        let inner = self.inner.read().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        inner.validators.values()
+            .filter(|v| now - v.last_active_timestamp < ACTIVE_THRESHOLD_SECS)
+            .count()
+    }
+    
+    /// Get all active validators (online in last 5 minutes)
+    pub fn get_active_validators(&self) -> Vec<ValidatorInfo> {
+        let inner = self.inner.read().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        inner.validators.values()
+            .filter(|v| now - v.last_active_timestamp < ACTIVE_THRESHOLD_SECS)
+            .cloned()
+            .collect()
+    }
+    
+    /// Update online status for all validators (call periodically)
+    pub fn update_online_status(&self) {
+        let mut inner = self.inner.write().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        for validator in inner.validators.values_mut() {
+            validator.is_online = now - validator.last_active_timestamp < ACTIVE_THRESHOLD_SECS;
+        }
     }
 
     /// Set the current challenge (used when receiving from P2P)

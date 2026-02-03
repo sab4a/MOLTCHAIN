@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: moltchain-darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: moltchain-darwin-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: moltchain-linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: moltchain-linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: moltchain-windows-x64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        working-directory: moltchain-node
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mv moltchain-node/target/${{ matrix.target }}/release/moltchain ${{ matrix.name }}
+          chmod +x ${{ matrix.name }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mv moltchain-node/target/${{ matrix.target }}/release/moltchain.exe ${{ matrix.name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
+  create-release:
+    name: Create Release
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+
+      - name: Display structure
+        run: ls -la binaries/*/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            binaries/moltchain-darwin-x64/moltchain-darwin-x64
+            binaries/moltchain-darwin-arm64/moltchain-darwin-arm64
+            binaries/moltchain-linux-x64/moltchain-linux-x64
+            binaries/moltchain-linux-arm64/moltchain-linux-arm64
+            binaries/moltchain-windows-x64.exe/moltchain-windows-x64.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish moltchain-agent
+        working-directory: moltchain-agent
+        run: |
+          npm version ${{ github.ref_name }} --no-git-tag-version || true
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

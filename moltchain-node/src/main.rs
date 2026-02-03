@@ -47,14 +47,29 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Node initialized. Config written to {:?}", config_path);
         }
 
-        Commands::Start { data_dir, rpc_port, p2p_port } => {
+        Commands::Start { data_dir, rpc_bind, p2p_bind, peers } => {
             tracing::info!("🚀 Starting Moltchain node...");
+            
+            // Parse bind addresses
+            let rpc_addr: std::net::SocketAddr = rpc_bind.parse()
+                .expect("Invalid RPC bind address (use format: 127.0.0.1:26658)");
+            let p2p_addr: std::net::SocketAddr = p2p_bind.parse()
+                .expect("Invalid P2P bind address (use format: 0.0.0.0:26656)");
             
             // Initialize state
             let state = MoltchainState::new();
             
             // Start P2P network with state reference
-            let (network, network_handle, mut event_rx) = MoltchainNetwork::new(p2p_port, state.clone()).await?;
+            let (network, network_handle, mut event_rx) = MoltchainNetwork::new(p2p_addr.port(), state.clone()).await?;
+            
+            // Connect to bootstrap peers
+            if !peers.is_empty() {
+                tracing::info!("🔗 Connecting to {} bootstrap peers...", peers.len());
+                for peer in &peers {
+                    tracing::info!("   → {}", peer);
+                    // TODO: Implement dial_peer in MoltchainNetwork
+                }
+            }
             
             // Spawn network event handler
             let state_for_events = state.clone();
@@ -88,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
             });
 
             // Start RPC server with network handle for broadcasting
-            let (rpc_handle, event_tx) = start_rpc_server(state.clone(), rpc_port, Some(network_handle)).await?;
+            let (rpc_handle, event_tx) = start_rpc_server(state.clone(), rpc_addr, Some(network_handle)).await?;
             
             // Spawn state broadcaster - sends snapshots every second
             let state_for_broadcast = state.clone();
@@ -114,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
                             state_root: hex::encode(state_for_broadcast.get_state_root()),
                             total_supply: state_for_broadcast.get_total_supply(),
                             validator_count: state_for_broadcast.get_all_validators().len(),
+                            active_validator_count: state_for_broadcast.get_active_validator_count(),
                             has_active_challenge: current_challenge.is_some(),
                         };
 
@@ -124,6 +140,8 @@ async fn main() -> anyhow::Result<()> {
                                 balance: v.balance,
                                 validations_count: v.validations_count,
                                 reputation_score: v.reputation_score,
+                                last_active_timestamp: v.last_active_timestamp,
+                                is_online: v.is_online,
                             })
                             .collect();
 
@@ -154,8 +172,8 @@ async fn main() -> anyhow::Result<()> {
                 }
             });
             
-            tracing::info!("✅ Node running - RPC: 127.0.0.1:{}, P2P: 0.0.0.0:{}", rpc_port, p2p_port);
-            tracing::info!("📡 WebSocket subscriptions available at ws://127.0.0.1:{}", rpc_port);
+            tracing::info!("✅ Node running - RPC: {}, P2P: {}", rpc_addr, p2p_addr);
+            tracing::info!("📡 WebSocket subscriptions available at ws://{}", rpc_addr);
             tracing::info!("🤖 Ready for AI agent validators to connect!");
 
             // Wait for shutdown

@@ -150,8 +150,173 @@ export async function checkBinaryUpdates() {
 }
 
 /**
+ * Get platform-specific binary name
+ */
+function getBinaryName() {
+  const platform = process.platform;
+  const arch = process.arch;
+  
+  if (platform === 'darwin') {
+    return arch === 'arm64' ? 'moltchain-darwin-arm64' : 'moltchain-darwin-x64';
+  } else if (platform === 'linux') {
+    return arch === 'arm64' ? 'moltchain-linux-arm64' : 'moltchain-linux-x64';
+  } else if (platform === 'win32') {
+    return 'moltchain-windows-x64.exe';
+  }
+  return null;
+}
+
+/**
+ * Get current binary version
+ */
+export async function getCurrentBinaryVersion() {
+  const binaryPath = path.join(process.env.HOME || '', '.moltchain', 'bin', 'moltchain');
+  
+  if (!fs.existsSync(binaryPath)) {
+    return null;
+  }
+  
+  try {
+    const result = execSync(`"${binaryPath}" --version`, { encoding: 'utf8' });
+    const match = result.match(/(\d+\.\d+\.\d+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Download and install the latest Rust binary
+ */
+export async function installBinaryUpdate(release, silent = false) {
+  const binaryName = getBinaryName();
+  if (!binaryName) {
+    if (!silent) console.error('❌ Unsupported platform');
+    return { success: false, error: 'Unsupported platform' };
+  }
+  
+  const asset = release.assets.find(a => a.name === binaryName || a.name.includes(binaryName));
+  if (!asset) {
+    if (!silent) console.error('❌ No binary found for this platform');
+    return { success: false, error: 'No binary for platform' };
+  }
+  
+  const binDir = path.join(process.env.HOME || '', '.moltchain', 'bin');
+  const binaryPath = path.join(binDir, 'moltchain');
+  const tempPath = path.join(binDir, 'moltchain.new');
+  
+  // Ensure directory exists
+  if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
+  }
+  
+  if (!silent) {
+    console.log(`⬇️ Downloading ${asset.name} (${(asset.size / 1024 / 1024).toFixed(1)} MB)...`);
+  }
+  
+  return new Promise((resolve) => {
+    const downloadUrl = asset.url;
+    
+    // Follow redirects for GitHub downloads
+    const download = (url) => {
+      https.get(url, { 
+        headers: { 
+          'User-Agent': 'moltchain-agent',
+          'Accept': 'application/octet-stream'
+        } 
+      }, (res) => {
+        // Handle redirect
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          download(res.headers.location);
+          return;
+        }
+        
+        if (res.statusCode !== 200) {
+          resolve({ success: false, error: `HTTP ${res.statusCode}` });
+          return;
+        }
+        
+        const file = fs.createWriteStream(tempPath);
+        res.pipe(file);
+        
+        file.on('finish', () => {
+          file.close();
+          
+          try {
+            // Backup old binary
+            if (fs.existsSync(binaryPath)) {
+              fs.renameSync(binaryPath, `${binaryPath}.backup`);
+            }
+            
+            // Move new binary
+            fs.renameSync(tempPath, binaryPath);
+            
+            // Make executable
+            fs.chmodSync(binaryPath, '755');
+            
+            if (!silent) {
+              console.log(`✅ Binary updated to ${release.version}`);
+              console.log(`📍 Installed to: ${binaryPath}`);
+            }
+            
+            resolve({ success: true, version: release.version, path: binaryPath });
+          } catch (err) {
+            resolve({ success: false, error: err.message });
+          }
+        });
+      }).on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    };
+    
+    download(downloadUrl);
+  });
+}
+
+/**
+ * Full update check - both npm package and Rust binary
+ */
+export async function checkAllUpdates(options = {}) {
+  const { autoInstall = false, silent = false } = options;
+  const results = { agent: null, binary: null };
+  
+  // Check npm package
+  if (!silent) console.log('🔍 Checking for agent updates...');
+  results.agent = await checkForUpdates({ autoInstall, silent });
+  
+  // Check Rust binary
+  if (!silent) console.log('🔍 Checking for binary updates...');
+  const release = await checkBinaryUpdates();
+  
+  if (release && release.version) {
+    const currentBinary = await getCurrentBinaryVersion();
+    const latestBinary = release.version.replace(/^v/, '');
+    
+    if (!silent) {
+      console.log(`📦 Current binary: ${currentBinary || 'not installed'}`);
+      console.log(`📦 Latest binary: ${latestBinary}`);
+    }
+    
+    if (!currentBinary || isNewerVersion(currentBinary, latestBinary)) {
+      if (!silent) console.log(`\n🆕 New binary available: ${release.version}`);
+      
+      if (autoInstall) {
+        results.binary = await installBinaryUpdate(release, silent);
+      } else {
+        results.binary = { updateAvailable: true, current: currentBinary, latest: latestBinary };
+      }
+    } else {
+      if (!silent) console.log('✅ Binary is up to date!');
+      results.binary = { updateAvailable: false, current: currentBinary, latest: latestBinary };
+    }
+  }
+  
+  return results;
+}
+
+/**
  * Auto-update daemon
- * Checks for updates periodically
+ * Checks for updates periodically (both npm and binary)
  */
 export class AutoUpdater {
   constructor(options = {}) {
@@ -159,6 +324,7 @@ export class AutoUpdater {
     this.autoInstall = options.autoInstall || false;
     this.onUpdate = options.onUpdate || (() => {});
     this.timer = null;
+    this.restartOnBinaryUpdate = options.restartOnBinaryUpdate || false;
   }
   
   start() {
@@ -182,19 +348,48 @@ export class AutoUpdater {
   }
   
   async check() {
-    const result = await checkForUpdates({ 
+    // Check both agent and binary updates
+    const results = await checkAllUpdates({ 
       autoInstall: this.autoInstall, 
       silent: true 
     });
     
-    if (result.updateAvailable) {
-      console.log(`\n🆕 Update available: ${result.current} → ${result.latest}`);
+    let needsRestart = false;
+    
+    // Agent update
+    if (results.agent?.updateAvailable) {
+      console.log(`\n🆕 Agent update available: ${results.agent.current} → ${results.agent.latest}`);
       
-      if (this.autoInstall && result.success) {
-        console.log('✅ Update installed! Restart to apply.');
-        this.onUpdate(result);
+      if (this.autoInstall && results.agent.success) {
+        console.log('✅ Agent update installed!');
+        needsRestart = true;
       } else if (!this.autoInstall) {
         console.log('💡 Run "moltchain-agent update" to install');
+      }
+    }
+    
+    // Binary update
+    if (results.binary?.updateAvailable) {
+      console.log(`\n🆕 Binary update available: ${results.binary.current || 'none'} → ${results.binary.latest}`);
+      
+      if (this.autoInstall && results.binary.success) {
+        console.log('✅ Binary update installed!');
+        needsRestart = true;
+      } else if (!this.autoInstall) {
+        console.log('💡 Run "moltchain-agent update" to install');
+      }
+    }
+    
+    if (needsRestart) {
+      console.log('\n⚠️ Updates installed! Restart to apply changes.');
+      this.onUpdate(results);
+      
+      // Auto-restart if configured
+      if (this.restartOnBinaryUpdate) {
+        console.log('🔄 Auto-restarting in 5 seconds...');
+        setTimeout(() => {
+          process.exit(0); // Let process manager restart
+        }, 5000);
       }
     }
   }
@@ -206,5 +401,8 @@ export default {
   checkForUpdates,
   installUpdate,
   checkBinaryUpdates,
+  getCurrentBinaryVersion,
+  installBinaryUpdate,
+  checkAllUpdates,
   AutoUpdater
 };

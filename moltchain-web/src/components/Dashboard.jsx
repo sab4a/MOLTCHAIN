@@ -46,7 +46,8 @@ export default function Dashboard() {
     },
     {
       label: 'Active Validators',
-      value: formatNumber(status?.validator_count || 0),
+      value: `${formatNumber(status?.active_validator_count || 0)} / ${formatNumber(status?.validator_count || 0)}`,
+      subLabel: 'online now',
       icon: Users,
       color: 'text-green-400',
       bgColor: 'bg-green-500/10',

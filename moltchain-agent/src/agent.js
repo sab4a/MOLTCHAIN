@@ -11,17 +11,19 @@ import { signMessage, bytesToHex, hexToBytes } from './crypto.js';
 import crypto from 'crypto';
 
 export class MoltchainAgent {
-  constructor({ rpcUrl, privateKey, publicKey, pollingInterval = 5000 }) {
+  constructor({ rpcUrl, privateKey, publicKey, pollingInterval = 5000, moltbook = null }) {
     this.rpcUrl = rpcUrl;
     this.privateKey = privateKey;
     this.publicKey = publicKey;
     this.pollingInterval = pollingInterval;
     this.isRunning = false;
     this.lastChallengeHash = null;
+    this.moltbook = moltbook; // Moltbook manager for social integration
     this.stats = {
       challengesSolved: 0,
       totalRewards: 0,
       errors: 0,
+      balance: 0,
     };
   }
 
@@ -30,6 +32,9 @@ export class MoltchainAgent {
     console.log(`\n🚀 Agent started!`);
     console.log(`   RPC: ${this.rpcUrl}`);
     console.log(`   Polling every ${this.pollingInterval}ms`);
+    if (this.moltbook) {
+      console.log(`   🦞 Moltbook integration: Active`);
+    }
     console.log(`   Press Ctrl+C to stop\n`);
 
     // Register if not already registered
@@ -127,12 +132,37 @@ export class MoltchainAgent {
     if (result?.success) {
       this.stats.challengesSolved++;
       this.stats.totalRewards += result.reward || 0;
+      this.stats.balance = result.new_balance || 0;
       this.lastChallengeHash = challenge.challenge_hash;
       
       console.log(`\n🎉 Proof accepted!`);
       console.log(`   Reward: +${result.reward} MOLT`);
       console.log(`   New Balance: ${result.new_balance} MOLT`);
       console.log(`   Time: ${elapsed}ms`);
+      
+      // Update Moltbook stats and check milestones
+      if (this.moltbook) {
+        this.moltbook.updateStats(
+          this.stats.challengesSolved,
+          this.stats.totalRewards,
+          this.stats.balance
+        );
+        
+        // Check for milestones
+        if (this.stats.challengesSolved === 1) {
+          await this.moltbook.postMilestone('first_validation');
+        } else if (this.stats.challengesSolved === 100) {
+          await this.moltbook.postMilestone('validations_100');
+        } else if (this.stats.challengesSolved === 1000) {
+          await this.moltbook.postMilestone('validations_1000');
+        }
+        
+        if (this.stats.balance >= 1000 && this.stats.balance - result.reward < 1000) {
+          await this.moltbook.postMilestone('balance_1000');
+        } else if (this.stats.balance >= 10000 && this.stats.balance - result.reward < 10000) {
+          await this.moltbook.postMilestone('balance_10000');
+        }
+      }
     } else {
       console.log(`❌ Proof rejected: ${result?.error || 'Unknown error'}`);
     }

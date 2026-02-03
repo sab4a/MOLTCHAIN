@@ -1,42 +1,76 @@
 /**
  * Moltchain RPC Client with WebSocket Subscription Support
+ * 
+ * Supports multiple RPC endpoints for true P2P resilience.
+ * If one node goes down, automatically tries others.
  */
 
-const RPC_URL = import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:26658';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:26658';
+// Multiple RPC endpoints for failover (add your public nodes here)
+const RPC_ENDPOINTS = [
+  import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:26658',
+  // Add more public endpoints as the network grows:
+  // 'https://rpc1.moltchain.ai',
+  // 'https://rpc2.moltchain.ai',
+].filter(Boolean);
+
+const WS_ENDPOINTS = [
+  import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:26658',
+  // Add more public WebSocket endpoints:
+  // 'wss://rpc1.moltchain.ai',
+  // 'wss://rpc2.moltchain.ai',
+].filter(Boolean);
+
+// Track which endpoint is currently working
+let currentRpcIndex = 0;
+let currentWsIndex = 0;
 
 let rpcId = 0;
 
+/**
+ * Try RPC call with automatic failover to other endpoints
+ */
 export async function rpc(method, params = []) {
-  try {
-    const response = await fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: ++rpcId,
-        method,
-        params,
-      }),
-    });
+  const startIndex = currentRpcIndex;
+  
+  // Try each endpoint until one works
+  for (let i = 0; i < RPC_ENDPOINTS.length; i++) {
+    const index = (startIndex + i) % RPC_ENDPOINTS.length;
+    const endpoint = RPC_ENDPOINTS[index];
+    
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: ++rpcId,
+          method,
+          params,
+        }),
+      });
 
-    const json = await response.json();
-    
-    if (json.error) {
-      throw new Error(json.error.message || JSON.stringify(json.error));
+      const json = await response.json();
+      
+      if (json.error) {
+        throw new Error(json.error.message || JSON.stringify(json.error));
+      }
+      
+      // This endpoint works, remember it
+      currentRpcIndex = index;
+      return json.result;
+    } catch (error) {
+      console.warn(`RPC endpoint ${endpoint} failed:`, error.message);
+      // Try next endpoint
+      continue;
     }
-    
-    return json.result;
-  } catch (error) {
-    if (error.message.includes('Failed to fetch')) {
-      throw new Error('Cannot connect to Moltchain node. Is it running?');
-    }
-    throw error;
   }
+  
+  // All endpoints failed
+  throw new Error('Cannot connect to any Moltchain node. Check if nodes are running or add more RPC endpoints.');
 }
 
 /**
- * WebSocket subscription manager
+ * WebSocket subscription manager with failover support
  */
 class StateSubscription {
   constructor() {
@@ -44,16 +78,24 @@ class StateSubscription {
     this.listeners = new Set();
     this.reconnectTimeout = null;
     this.subscriptionId = null;
+    this.currentEndpointIndex = 0;
   }
 
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return;
     
+    const wsUrl = WS_ENDPOINTS[this.currentEndpointIndex];
+    if (!wsUrl) {
+      console.error('No WebSocket endpoints available');
+      return;
+    }
+    
     try {
-      this.ws = new WebSocket(WS_URL);
+      console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
+      this.ws = new WebSocket(wsUrl);
       
       this.ws.onopen = () => {
-        console.log('🔌 WebSocket connected');
+        console.log('🔌 WebSocket connected to', wsUrl);
         // Subscribe to state updates
         this.ws.send(JSON.stringify({
           jsonrpc: '2.0',
@@ -85,7 +127,9 @@ class StateSubscription {
       };
       
       this.ws.onclose = () => {
-        console.log('🔌 WebSocket disconnected, reconnecting in 3s...');
+        console.log('🔌 WebSocket disconnected, trying next endpoint...');
+        // Try next endpoint on reconnect
+        this.currentEndpointIndex = (this.currentEndpointIndex + 1) % WS_ENDPOINTS.length;
         this.scheduleReconnect();
       };
       

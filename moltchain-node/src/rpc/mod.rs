@@ -53,6 +53,8 @@ pub struct ValidatorInfoResponse {
     pub balance: u64,
     pub validations_count: u64,
     pub reputation_score: u64,
+    pub last_active_timestamp: u64,
+    pub is_online: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +63,7 @@ pub struct NodeStatusResponse {
     pub state_root: String,
     pub total_supply: u64,
     pub validator_count: usize,
+    pub active_validator_count: usize, // Online in last 5 minutes
     pub has_active_challenge: bool,
 }
 
@@ -211,6 +214,7 @@ impl MoltchainRpcServerImpl {
             state_root: hex::encode(self.state.get_state_root()),
             total_supply: self.state.get_total_supply(),
             validator_count: self.state.get_all_validators().len(),
+            active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
         };
 
@@ -221,6 +225,8 @@ impl MoltchainRpcServerImpl {
                 balance: v.balance,
                 validations_count: v.validations_count,
                 reputation_score: v.reputation_score,
+                last_active_timestamp: v.last_active_timestamp,
+                is_online: v.is_online,
             })
             .collect();
 
@@ -254,6 +260,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             state_root: hex::encode(self.state.get_state_root()),
             total_supply: self.state.get_total_supply(),
             validator_count: self.state.get_all_validators().len(),
+            active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
         })
     }
@@ -434,6 +441,8 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             balance: v.balance,
             validations_count: v.validations_count,
             reputation_score: v.reputation_score,
+            last_active_timestamp: v.last_active_timestamp,
+            is_online: v.is_online,
         }))
     }
     
@@ -443,6 +452,8 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             balance: v.balance,
             validations_count: v.validations_count,
             reputation_score: v.reputation_score,
+            last_active_timestamp: v.last_active_timestamp,
+            is_online: v.is_online,
         }).collect())
     }
 
@@ -585,7 +596,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
 /// Start the RPC server with event broadcasting
 pub async fn start_rpc_server(
     state: MoltchainState, 
-    port: u16,
+    addr: std::net::SocketAddr,
     network: Option<NetworkHandle>,
 ) -> anyhow::Result<(ServerHandle, EventSender)> {
     // Create event broadcast channel
@@ -601,15 +612,15 @@ pub async fn start_rpc_server(
 
     let server = Server::builder()
         .set_middleware(middleware)
-        .build(format!("127.0.0.1:{}", port))
+        .build(addr)
         .await?;
     
     let rpc_module = MoltchainRpcServerImpl::new(state, network, event_tx.clone()).into_rpc();
     
     let handle = server.start(rpc_module);
     
-    tracing::info!("🌐 JSON-RPC server started on http://127.0.0.1:{}", port);
-    tracing::info!("📡 WebSocket subscriptions available at ws://127.0.0.1:{}", port);
+    tracing::info!("🌐 JSON-RPC server started on http://{}", addr);
+    tracing::info!("📡 WebSocket subscriptions available at ws://{}", addr);
     
     Ok((handle, event_tx))
 }
