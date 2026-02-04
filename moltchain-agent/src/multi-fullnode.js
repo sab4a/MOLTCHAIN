@@ -242,7 +242,14 @@ async function main() {
   console.log(`   ✅ ${started}/${NUM_NODES} nodes started\n`);
 
   // Wait for all nodes to be ready
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, 2000));
+  
+  // Send heartbeats to mark all nodes as active BEFORE validation starts
+  console.log('💓 Sending heartbeats to become active...');
+  await Promise.all(nodes.map(n => 
+    rpcCall(DEVNET_RPC, 'moltchain_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
+  ));
+  await new Promise(r => setTimeout(r, 1000));
 
   // Check sync status
   console.log('📊 Node Status:');
