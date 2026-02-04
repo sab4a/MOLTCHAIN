@@ -26,9 +26,13 @@ const DEFAULT_P2P_PORT = 26656;
 // This is the main Moltchain devnet bootstrap node
 const FLY_IO_BOOTSTRAP = '/ip4/50.31.246.124/tcp/26656';
 
+// Alternative: DNS-based address (resolves to same IP)
+const FLY_IO_BOOTSTRAP_DNS = '/dns4/moltchain-rpc.fly.dev/tcp/26656';
+
 // Bootstrap peers for network discovery
 const BOOTSTRAP_PEERS = [
   FLY_IO_BOOTSTRAP,
+  FLY_IO_BOOTSTRAP_DNS,
   // Additional bootstrap peers can be added here
   // Format: /ip4/{IP}/tcp/{PORT}/p2p/{PEER_ID}
 ];
@@ -140,11 +144,11 @@ export class EmbeddedNode {
     console.log(`   P2P Port: ${this.p2pPort}`);
     console.log(`   Data Dir: ${this.dataDir}`);
 
-    // Build args
+    // Build args - note: binary uses --rpc-bind and --p2p-bind with full addresses
     const args = [
       'start',
-      '--rpc-port', this.rpcPort.toString(),
-      '--p2p-port', this.p2pPort.toString(),
+      '--rpc-bind', `127.0.0.1:${this.rpcPort}`,
+      '--p2p-bind', `0.0.0.0:${this.p2pPort}`,
       '--data-dir', this.dataDir,
     ];
 

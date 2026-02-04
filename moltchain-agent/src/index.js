@@ -40,8 +40,9 @@ program
   .option('--rpc-port <port>', 'RPC port for node', '26658')
   .option('--p2p-port <port>', 'P2P port for node', '26656')
   .option('--peer <multiaddr>', 'Bootstrap peer multiaddr (can be repeated)', (val, arr) => { arr.push(val); return arr; }, [])
-  .option('--local', 'Run local embedded node instead of connecting to devnet')
-  .option('-r, --rpc <url>', 'RPC URL to connect to', 'https://moltchain-rpc.fly.dev')
+  .option('--full-node', 'Run as full P2P node (embeds blockchain, syncs with network)')
+  .option('--local', 'Run local embedded node (isolated, no network sync)')
+  .option('-r, --rpc <url>', 'RPC URL to connect to (client mode)', 'https://moltchain-rpc.fly.dev')
   .action(async (options) => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
@@ -52,15 +53,13 @@ program
 ╚══════════════════════════════════════════════════════════════╝
 `);
     
-    // DEVNET MODE BY DEFAULT (connect to Fly.io)
-    // Use --local to run your own embedded node
     let embeddedNode = null;
     let rpcUrl = options.rpc;
     
-    if (options.local) {
-      // LOCAL MODE: Run as a full P2P peer
-      console.log('🌐 LOCAL MODE: Starting embedded blockchain node...');
-      console.log('   Running your own node (not connected to devnet)\n');
+    if (options.fullNode) {
+      // FULL NODE MODE: True P2P - run your own node + sync with devnet
+      console.log('🌐 FULL NODE MODE: Running as true P2P peer...');
+      console.log('   Your node syncs with the network and can operate independently!\n');
       
       embeddedNode = new EmbeddedNode({
         rpcPort: parseInt(options.rpcPort),
@@ -71,7 +70,37 @@ program
       const started = await embeddedNode.start();
       if (started) {
         rpcUrl = embeddedNode.getRpcUrl();
-        console.log(`\n✅ P2P Node Active!`);
+        console.log(`\n✅ Full P2P Node Active!`);
+        console.log(`   RPC: ${rpcUrl}`);
+        console.log(`   P2P: 0.0.0.0:${embeddedNode.p2pPort}`);
+        console.log(`   State syncing from network...`);
+        
+        if (embeddedNode.peerId) {
+          console.log(`\n🔗 Your peer address (share with others):`);
+          console.log(`   /ip4/YOUR_PUBLIC_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}`);
+          console.log(`\n   Others can connect: moltchain-agent start --full-node --peer "YOUR_ADDR"\n`);
+        }
+      } else {
+        console.error('❌ Failed to start embedded node!');
+        console.log('   Make sure moltchain binary is installed:');
+        console.log('   npx moltchain-node-cli install\n');
+        console.log('   Falling back to client mode...\n');
+      }
+    } else if (options.local) {
+      // LOCAL MODE: Isolated node (for testing)
+      console.log('🌐 LOCAL MODE: Starting isolated node (no network sync)...');
+      console.log('   This creates a fresh chain, not connected to devnet\n');
+      
+      embeddedNode = new EmbeddedNode({
+        rpcPort: parseInt(options.rpcPort),
+        p2pPort: parseInt(options.p2pPort),
+        bootstrapPeers: [], // No bootstrap = isolated
+      });
+      
+      const started = await embeddedNode.start();
+      if (started) {
+        rpcUrl = embeddedNode.getRpcUrl();
+        console.log(`\n✅ Local Node Active!`);
         console.log(`   RPC: ${rpcUrl}`);
         console.log(`   P2P: 0.0.0.0:${embeddedNode.p2pPort}`);
         
@@ -86,10 +115,11 @@ program
         process.exit(1);
       }
     } else {
-      // DEFAULT: Connect to devnet
-      console.log('🌐 DEVNET MODE: Connecting to Moltchain network...');
+      // DEFAULT: Client mode - connect to devnet RPC (easiest)
+      console.log('🌐 CLIENT MODE: Connecting to Moltchain devnet...');
       console.log(`   RPC: ${rpcUrl}`);
-      console.log('   Use --local to run your own embedded node\n');
+      console.log('   ⚠️  Depends on central RPC - not true P2P');
+      console.log('   💡 Use --full-node for true decentralization\n');
     }
     
     // Start auto-updater if enabled

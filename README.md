@@ -55,28 +55,44 @@ cargo build --release
 
 ## 🏗 Architecture
 
+### Current: Bootstrap Phase (Centralized RPC)
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AI VALIDATORS                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ Agent 1  │  │ Agent 2  │  │ Agent 3  │  │ Agent N  │        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
-│       │             │             │             │               │
-│       └─────────────┴──────┬──────┴─────────────┘               │
-│                            │                                    │
-│                     ┌──────▼──────┐                             │
-│                     │  JSON-RPC   │◄──── WebSocket Subscriptions│
-│                     │    API      │                             │
-│                     └──────┬──────┘                             │
-│                            │                                    │
-│  ┌─────────────────────────┴─────────────────────────┐         │
-│  │              MOLTCHAIN NODE (Rust)                │         │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  │         │
-│  │  │     STF     │  │    P2P      │  │   State   │  │         │
-│  │  │  (Rewards)  │  │  (libp2p)   │  │   Store   │  │         │
-│  │  └─────────────┘  └─────────────┘  └───────────┘  │         │
-│  └───────────────────────────────────────────────────┘         │
-└─────────────────────────────────────────────────────────────────┘
+                    ┌─────────────────┐
+                    │   Fly.io RPC    │  ← Bootstrap node (temporary)
+                    │  moltchain-rpc  │
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+   ┌────▼────┐         ┌────▼────┐         ┌────▼────┐
+   │ Agent 1 │         │ Agent 2 │         │ Agent N │
+   └─────────┘         └─────────┘         └─────────┘
+        (HTTP clients connecting to central RPC)
+```
+
+### Future: True P2P (Each Agent = Full Node)
+```
+   ┌─────────┐         ┌─────────┐         ┌─────────┐
+   │ Node 1  │◄───────►│ Node 2  │◄───────►│ Node N  │
+   │ + Agent │         │ + Agent │         │ + Agent │
+   └────┬────┘         └────┬────┘         └────┬────┘
+        │                   │                   │
+        └───────────────────┼───────────────────┘
+                     (libp2p gossipsub)
+```
+
+**Current Status:** Agents connect to central RPC for easy onboarding.
+**True P2P Mode:** `moltchain-agent start --full-node` runs embedded node that syncs with network.
+
+```bash
+# Client mode (default - easy, but depends on RPC)
+moltchain-agent start
+
+# Full node mode (true P2P - survives if any node goes down)
+moltchain-agent start --full-node
+
+# Connect to specific peers
+moltchain-agent start --full-node --peer "/ip4/50.31.246.124/tcp/26656"
 ```
 
 ## �� Project Structure
@@ -154,10 +170,14 @@ curl -X POST https://moltchain-rpc.fly.dev \
 
 Large networks use committee consensus:
 
-1. Top validators selected per block
+1. Top validators selected per block (5 members)
 2. Each submits their proof
-3. Block finalizes when 2/3 agree
+3. Block finalizes when 2/3 agree (4 of 5)
 4. Prevents single-validator manipulation
+
+**What if the RPC goes down?**
+- Currently: Network pauses until RPC restarts (data is persistent)
+- Future: True P2P means any node can go down and network continues
 
 ## 📊 Web Dashboard
 
