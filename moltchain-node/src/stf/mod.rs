@@ -8,8 +8,12 @@
 mod state;
 mod transaction;
 mod challenge;
+mod fraud;
 
-pub use state::{MoltchainState, ValidatorInfo, BlockHeader, ProofResult, TxRecord, BlockCommittee, CommitteeMember};
+#[allow(unused_imports)]
+pub use state::{MoltchainState, ValidatorInfo, BlockHeader, ProofResult, TxRecord, Epoch, EPOCH_LENGTH};
 pub use transaction::{MoltTx, TxResult};
-pub use challenge::{CognitiveChallenge, ChallengeType, ChallengeResponse, CognitivePuzzle, PuzzleType};
+pub use challenge::{CognitiveChallenge, ChallengeResponse};
+#[allow(unused_imports)]
+pub use fraud::{FraudProof, FraudType, FraudEvidence, FraudVerificationResult, FraudProofManager, FRAUD_PROOF_WINDOW};
 

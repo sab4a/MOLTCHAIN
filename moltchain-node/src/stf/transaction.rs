@@ -4,14 +4,21 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
 /// Gas constants for future smart contract support
+#[allow(dead_code)]
 pub const GAS_REGISTER: u64 = 1_000;      // Fixed cost to register
+#[allow(dead_code)]
 pub const GAS_TRANSFER: u64 = 500;         // Fixed cost to transfer
+#[allow(dead_code)]
 pub const GAS_PROOF: u64 = 0;              // Proofs are free (validators earn, not pay)
+#[allow(dead_code)]
 pub const GAS_CONTRACT_DEPLOY: u64 = 50_000;  // Deploy a contract
+#[allow(dead_code)]
 pub const GAS_CONTRACT_CALL_BASE: u64 = 5_000; // Base cost per contract call
+#[allow(dead_code)]
 pub const GAS_PER_BYTE: u64 = 1;           // Per byte of calldata
 
 /// Default gas price (can be adjusted by governance later)
+#[allow(dead_code)]
 pub const DEFAULT_GAS_PRICE: u64 = 1;      // 1 MOLT per gas unit
 
 /// Transaction types supported by Moltchain
@@ -169,6 +176,13 @@ pub enum TxResult {
         reward: u64,
         new_balance: u64,
     },
+    /// Block was finalized after this proof
+    BlockFinalized {
+        reward: u64,
+        new_balance: u64,
+        block_height: u64,
+        state_root: [u8; 32],
+    },
     Registered {
         public_key: String,
     },
@@ -189,6 +203,7 @@ impl TxResult {
     pub fn is_success(&self) -> bool {
         matches!(self, 
             TxResult::Success { .. } | 
+            TxResult::BlockFinalized { .. } |
             TxResult::Registered { .. } |
             TxResult::ContractDeployed { .. } |
             TxResult::ContractResult { .. }

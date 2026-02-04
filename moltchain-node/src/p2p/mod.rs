@@ -27,6 +27,7 @@ const TOPIC_CHALLENGES: &str = "moltchain/challenges/1.0.0";
 const TOPIC_PROOFS: &str = "moltchain/proofs/1.0.0";
 const TOPIC_BLOCKS: &str = "moltchain/blocks/1.0.0";
 const TOPIC_STATE_SYNC: &str = "moltchain/state-sync/1.0.0";
+#[allow(dead_code)]
 const TOPIC_UPGRADES: &str = "moltchain/upgrades/1.0.0";
 
 /// Network behaviour combining gossipsub and mDNS
@@ -57,6 +58,7 @@ impl From<mdns::Event> for MoltchainBehaviourEvent {
 }
 
 /// P2P Message Types - Serializable for network transport
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum P2PMessage {
     /// Broadcast a new challenge to validators

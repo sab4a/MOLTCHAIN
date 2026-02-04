@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Node initialized. Config written to {:?}", config_path);
         }
 
-        Commands::Start { data_dir, rpc_bind, p2p_bind, peers } => {
+        Commands::Start { data_dir: _, rpc_bind, p2p_bind, peers } => {
             tracing::info!("🚀 Starting Moltchain node...");
             
             // Parse bind addresses

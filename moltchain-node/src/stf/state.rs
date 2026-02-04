@@ -74,6 +74,28 @@ pub struct BlockCommittee {
     pub threshold: usize, // 2/3 of committee must approve
 }
 
+/// Epoch information - for predictable validator rotation
+#[allow(dead_code)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Epoch {
+    /// Epoch number
+    pub number: u64,
+    /// Starting block height of this epoch
+    pub start_height: u64,
+    /// Ending block height of this epoch
+    pub end_height: u64,
+    /// Active validators for this epoch
+    pub validators: Vec<String>,
+    /// Total rewards distributed this epoch
+    pub total_rewards: u64,
+    /// Timestamp when epoch started
+    pub started_at: u64,
+}
+
+/// Epoch constants
+#[allow(dead_code)]
+pub const EPOCH_LENGTH: u64 = 100;  // blocks per epoch
+
 /// The core state of Moltchain
 #[derive(Clone)]
 pub struct MoltchainState {
@@ -114,6 +136,10 @@ struct StateInner {
     
     /// Committee size (how many validators per block)
     committee_size: usize,
+    
+    /// Current epoch information
+    #[allow(dead_code)]
+    current_epoch: Option<Epoch>,
 }
 
 impl MoltchainState {
@@ -142,6 +168,7 @@ impl MoltchainState {
                 total_supply: state.total_supply,
                 reward_per_proof: 100,
                 committee_size: 5, // 5 validators per committee
+                current_epoch: None,
             }
         } else {
             StateInner {
@@ -156,6 +183,7 @@ impl MoltchainState {
                 total_supply: 0,
                 reward_per_proof: 100,
                 committee_size: 5, // 5 validators per committee
+                current_epoch: None,
             }
         };
 
@@ -504,7 +532,7 @@ impl MoltchainState {
         let mut should_finalize = false;
         let mut committee_approvals = 0;
         let mut committee_threshold = 1;
-        let mut committee_members_count = 1;
+        let mut _committee_members_count = 1;
         
         if committee_mode {
             let committee = inner.current_committee.as_mut().unwrap();
@@ -518,7 +546,7 @@ impl MoltchainState {
             committee.approvals += 1;
             committee_approvals = committee.approvals;
             committee_threshold = committee.threshold;
-            committee_members_count = committee.members.len();
+            _committee_members_count = committee.members.len();
             
             tracing::info!(
                 "✅ Validator {}... approved block {} ({}/{})",
@@ -632,6 +660,7 @@ impl MoltchainState {
             inner.current_committee = None;
             
             let new_balance = inner.validators.get(&pubkey_hex).map(|v| v.balance).unwrap_or(0);
+            let finalized_height = inner.height;
             
             tracing::info!(
                 "📦 Block {} FINALIZED! {} validators approved, {} MOLT distributed",
@@ -644,9 +673,12 @@ impl MoltchainState {
                 &hex::encode(&new_state_root)[..32]
             );
             
-            TxResult::Success {
+            // Return BlockFinalized so RPC can broadcast over P2P
+            TxResult::BlockFinalized {
                 reward: reward_per_validator,
                 new_balance,
+                block_height: finalized_height,
+                state_root: new_state_root,
             }
         } else {
             // Proof accepted but block not yet finalized (waiting for more committee votes)
@@ -828,7 +860,185 @@ impl MoltchainState {
         self.inner.read().unwrap().validators.get(pubkey_hex).cloned()
     }
 
+    /// Slash a validator for malicious behavior
+    /// Returns the amount slashed
+    pub fn slash_validator(&self, pubkey_hex: &str, amount: u64, reason: &str) -> Result<u64, String> {
+        let mut inner = self.inner.write().unwrap();
+        
+        let validator = inner.validators.get_mut(pubkey_hex)
+            .ok_or_else(|| format!("Validator {} not found", pubkey_hex))?;
+        
+        // Calculate actual slash amount (can't slash more than balance)
+        let slash_amount = amount.min(validator.balance);
+        
+        // Apply slash
+        validator.balance -= slash_amount;
+        validator.reputation_score = validator.reputation_score.saturating_sub(50);
+        
+        // Burn slashed tokens (reduce total supply)
+        inner.total_supply -= slash_amount;
+        
+        let height = inner.height;
+        
+        // Record the slash transaction
+        let tx_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"slash");
+            hasher.update(pubkey_hex.as_bytes());
+            hasher.update(&slash_amount.to_le_bytes());
+            hex::encode::<[u8; 32]>(hasher.finalize().into())
+        };
+        
+        inner.tx_records.push(TxRecord {
+            hash: tx_hash,
+            tx_type: "slash".to_string(),
+            from: pubkey_hex.to_string(),
+            to: None, // Burned
+            amount: slash_amount,
+            status: format!("slashed: {}", reason),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            height,
+        });
+        
+        tracing::warn!(
+            "⚡ Slashed validator {}... for {} MOLT: {}",
+            &pubkey_hex[..16.min(pubkey_hex.len())],
+            slash_amount,
+            reason
+        );
+        
+        Ok(slash_amount)
+    }
+
+    /// Slash validator for missing committee duty
+    pub fn slash_for_committee_absence(&self, pubkey_hex: &str) -> Result<u64, String> {
+        const ABSENCE_SLASH_AMOUNT: u64 = 10;
+        self.slash_validator(pubkey_hex, ABSENCE_SLASH_AMOUNT, "committee absence")
+    }
+
+    /// Slash validator for submitting invalid proof
+    pub fn slash_for_invalid_proof(&self, pubkey_hex: &str) -> Result<u64, String> {
+        const INVALID_PROOF_SLASH: u64 = 25;
+        self.slash_validator(pubkey_hex, INVALID_PROOF_SLASH, "invalid proof submission")
+    }
+
+    /// Slash validator for equivocation (double voting)
+    pub fn slash_for_equivocation(&self, pubkey_hex: &str) -> Result<u64, String> {
+        const EQUIVOCATION_SLASH: u64 = 50;
+        self.slash_validator(pubkey_hex, EQUIVOCATION_SLASH, "equivocation (double vote)")
+    }
+
+    // ============ EPOCH SYSTEM ============
+
+    /// Get the current epoch number based on block height
+    pub fn current_epoch_number(&self) -> u64 {
+        let inner = self.inner.read().unwrap();
+        inner.height / EPOCH_LENGTH
+    }
+
+    /// Check if we're at an epoch boundary
+    pub fn is_epoch_boundary(&self) -> bool {
+        let inner = self.inner.read().unwrap();
+        inner.height % EPOCH_LENGTH == 0
+    }
+
+    /// Start a new epoch - should be called at epoch boundaries
+    pub fn start_new_epoch(&self) -> Epoch {
+        let mut inner = self.inner.write().unwrap();
+        
+        let epoch_number = inner.height / EPOCH_LENGTH;
+        let start_height = epoch_number * EPOCH_LENGTH;
+        let end_height = start_height + EPOCH_LENGTH - 1;
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        // Select validators for this epoch based on reputation
+        let mut validators: Vec<_> = inner.validators.iter()
+            .filter(|(_, v)| v.reputation_score >= 25) // Minimum reputation to be in epoch
+            .map(|(k, v)| (k.clone(), v.reputation_score))
+            .collect();
+        
+        // Sort by reputation descending
+        validators.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        // Take top validators (up to 100)
+        let epoch_validators: Vec<String> = validators.into_iter()
+            .take(100)
+            .map(|(k, _)| k)
+            .collect();
+        
+        let epoch = Epoch {
+            number: epoch_number,
+            start_height,
+            end_height,
+            validators: epoch_validators.clone(),
+            total_rewards: 0,
+            started_at: now,
+        };
+        
+        inner.current_epoch = Some(epoch.clone());
+        
+        tracing::info!(
+            "🔄 New epoch {} started! Blocks {}-{}, {} eligible validators",
+            epoch_number,
+            start_height,
+            end_height,
+            epoch_validators.len()
+        );
+        
+        epoch
+    }
+
+    /// Get current epoch info
+    pub fn get_current_epoch(&self) -> Option<Epoch> {
+        self.inner.read().unwrap().current_epoch.clone()
+    }
+
+    /// Check if a validator is eligible for the current epoch
+    pub fn is_validator_in_epoch(&self, pubkey_hex: &str) -> bool {
+        let inner = self.inner.read().unwrap();
+        if let Some(ref epoch) = inner.current_epoch {
+            epoch.validators.contains(&pubkey_hex.to_string())
+        } else {
+            // No epoch active - all registered validators are eligible
+            inner.validators.contains_key(pubkey_hex)
+        }
+    }
+
+    /// Update epoch rewards (called when block finalizes)
+    pub fn add_epoch_rewards(&self, amount: u64) {
+        let mut inner = self.inner.write().unwrap();
+        if let Some(ref mut epoch) = inner.current_epoch {
+            epoch.total_rewards += amount;
+        }
+    }
+
+    /// Calculate dynamic difficulty based on active validators
+    pub fn calculate_difficulty(&self) -> u8 {
+        let inner = self.inner.read().unwrap();
+        let active_count = inner.validators.values()
+            .filter(|v| v.is_online)
+            .count();
+        
+        match active_count {
+            0..=5 => 1,
+            6..=20 => 2,
+            21..=50 => 3,
+            51..=100 => 4,
+            _ => 5,
+        }
+    }
+
+    // ============ END EPOCH SYSTEM ============
+
     /// Get all transaction records
+    #[allow(dead_code)]
     pub fn get_transactions(&self, limit: usize) -> Vec<TxRecord> {
         let inner = self.inner.read().unwrap();
         inner.tx_records.iter().rev().take(limit).cloned().collect()
@@ -1014,6 +1224,7 @@ impl MoltchainState {
         
         match self.apply_tx(tx) {
             TxResult::Success { reward, new_balance } => Ok(ProofResult { reward, new_balance }),
+            TxResult::BlockFinalized { reward, new_balance, .. } => Ok(ProofResult { reward, new_balance }),
             TxResult::Registered { .. } => Err("Unexpected registration result".into()),
             TxResult::ContractDeployed { .. } | TxResult::ContractResult { .. } => {
                 Err("Unexpected contract result".into())

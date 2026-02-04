@@ -7,14 +7,13 @@
 //! - Query state
 
 use std::sync::Arc;
-use jsonrpsee::server::{Server, ServerHandle, RpcModule};
+use jsonrpsee::server::{Server, ServerHandle};
 use jsonrpsee::core::{async_trait, RpcResult, SubscriptionResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::PendingSubscriptionSink;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast};
 use tower_http::cors::{CorsLayer, Any};
-use futures::StreamExt;
 
 use crate::stf::{MoltchainState, MoltTx, TxResult, ChallengeResponse as StfChallengeResponse, TxRecord};
 use crate::p2p::NetworkHandle;
@@ -378,6 +377,52 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
                     error: None,
                 })
             },
+            TxResult::BlockFinalized { reward, new_balance, block_height, state_root } => {
+                // Broadcast proof AND block over P2P
+                if let Some(network) = &self.network {
+                    let proof_response = StfChallengeResponse {
+                        challenge_hash: req.challenge_hash.clone(),
+                        validator_pubkey: req.validator_pubkey.clone(),
+                        signature: req.signature.clone(),
+                        verdict_digest: req.verdict_digest.clone(),
+                        tx_verdicts: None,
+                        puzzle_answer: None,
+                        submitted_at_ms: None,
+                    };
+                    
+                    let network = network.lock().await;
+                    
+                    // Broadcast the proof
+                    if let Err(e) = network.broadcast_proof(proof_response).await {
+                        tracing::warn!("Failed to broadcast proof over P2P: {}", e);
+                    }
+                    
+                    // Broadcast the finalized block
+                    let block_header = crate::stf::BlockHeader {
+                        height: block_height,
+                        prev_state_root: state_root,
+                        tx_root: [0u8; 32], // Could compute this properly
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
+                        challenge_hash: challenge_hash,
+                    };
+                    
+                    if let Err(e) = network.broadcast_block(block_header).await {
+                        tracing::warn!("Failed to broadcast block over P2P: {}", e);
+                    } else {
+                        tracing::info!("📢 Block {} broadcasted to P2P network", block_height);
+                    }
+                }
+                
+                Ok(SubmitProofResponse {
+                    success: true,
+                    reward: Some(reward),
+                    new_balance: Some(new_balance),
+                    error: None,
+                })
+            },
             TxResult::Registered { .. } => Ok(SubmitProofResponse {
                 success: false,
                 reward: None,
@@ -419,7 +464,13 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
                 new_balance: Some(new_balance),
                 error: None,
             }),
-            TxResult::Registered { public_key } => Ok(SubmitProofResponse {
+            TxResult::BlockFinalized { reward, new_balance, .. } => Ok(SubmitProofResponse {
+                success: true,
+                reward: Some(reward),
+                new_balance: Some(new_balance),
+                error: None,
+            }),
+            TxResult::Registered { public_key: _ } => Ok(SubmitProofResponse {
                 success: true,
                 reward: Some(0),
                 new_balance: Some(0),
@@ -515,6 +566,11 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
                     error: None,
                 })
             }
+            TxResult::BlockFinalized { .. } => Ok(TransferResponse {
+                success: false,
+                tx_hash: None,
+                error: Some("Unexpected block finalization from transfer".into()),
+            }),
             TxResult::Registered { .. } => Ok(TransferResponse {
                 success: false,
                 tx_hash: None,

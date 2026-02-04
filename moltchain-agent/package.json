@@ -11,6 +11,10 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "keygen": "node src/keygen.js",
+    "multi": "node src/multi-validator.js",
+    "multi:10": "NUM_VALIDATORS=10 node src/multi-validator.js",
+    "multi:20": "NUM_VALIDATORS=20 node src/multi-validator.js",
+    "multi:50": "NUM_VALIDATORS=50 node src/multi-validator.js",
     "test": "node --test"
   },
   "keywords": [
