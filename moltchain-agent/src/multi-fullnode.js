@@ -114,6 +114,15 @@ class FullNodeValidator {
       // Already registered is ok
     }
 
+    // Send heartbeat to become ACTIVE
+    try {
+      await rpcCall(DEVNET_RPC, 'moltchain_presence', [{ 
+        validator_pubkey: this.keypair.publicKey 
+      }]);
+    } catch (e) {
+      // Ignore heartbeat errors
+    }
+
     return true;
   }
 
@@ -122,21 +131,31 @@ class FullNodeValidator {
       // Get challenge from DEVNET (source of truth for new blocks)
       let challenge = await rpcCall(DEVNET_RPC, 'moltchain_getChallenge', []);
       
-      if (!challenge) {
+      // If no challenge OR challenge is expired, request new one
+      if (!challenge || challenge.remaining_seconds <= 0) {
         challenge = await rpcCall(DEVNET_RPC, 'moltchain_newChallenge', []);
+        if (this.index === 1) console.log(`   Node 1: Got new challenge ${challenge?.challenge_hash?.slice(0,8)}, expires in ${challenge?.remaining_seconds}s`);
       }
       
-      if (!challenge) return null;
+      if (!challenge || challenge.remaining_seconds <= 0) {
+        if (this.index === 1) console.log(`   Node 1: No valid challenge`);
+        return null;
+      }
 
       // Skip if we already processed this challenge
       if (challenge.challenge_hash === this.lastChallengeHash) {
         return null;
       }
+      
+      if (this.index === 1) console.log(`   Node 1: Processing challenge ${challenge.challenge_hash.slice(0,8)} at height ${challenge.height}`);
 
-      // Create proof
+      // Create proof - sign (challenge_hash || verdict_digest || height)
       const verdictDigest = crypto.createHash('sha256').update('valid').digest();
       const challengeBytes = Buffer.from(challenge.challenge_hash, 'hex');
-      const message = Buffer.concat([challengeBytes, verdictDigest]);
+      const heightBuffer = Buffer.alloc(8);
+      heightBuffer.writeBigUInt64LE(BigInt(challenge.height));
+      
+      const message = Buffer.concat([challengeBytes, verdictDigest, heightBuffer]);
       
       const privateKeyBytes = Buffer.from(this.keypair.privateKey, 'hex');
       const signature = await ed.signAsync(message, privateKeyBytes);
@@ -149,6 +168,8 @@ class FullNodeValidator {
         verdict_digest: bytesToHex(verdictDigest),
       }]);
 
+      if (this.index === 1) console.log(`   Node 1: Submit result:`, JSON.stringify(result));
+
       this.lastChallengeHash = challenge.challenge_hash;
 
       if (result?.success && result.reward > 0) {
@@ -159,6 +180,7 @@ class FullNodeValidator {
       
       return null;
     } catch (e) {
+      if (this.index === 1) console.log(`   Node 1: Error:`, e.message);
       return null;
     }
   }
@@ -237,10 +259,19 @@ async function main() {
   let totalBlocks = 0;
   let totalRewards = 0;
   const startTime = Date.now();
+  let lastHeartbeat = 0;
 
   // Run for 60 seconds
   const duration = 60000;
   while (Date.now() - startTime < duration) {
+    // Send heartbeats every 10 seconds to stay active
+    if (Date.now() - lastHeartbeat > 10000) {
+      await Promise.all(nodes.map(n => 
+        rpcCall(DEVNET_RPC, 'moltchain_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
+      ));
+      lastHeartbeat = Date.now();
+    }
+    
     // All nodes try to validate in parallel
     const results = await Promise.all(nodes.map(n => n.validate()));
     

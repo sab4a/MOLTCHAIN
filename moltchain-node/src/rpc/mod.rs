@@ -25,10 +25,10 @@ use crate::p2p::NetworkHandle;
 
 /// Rate limiter configuration
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;           // 1 minute window
-const GLOBAL_RATE_LIMIT: usize = 100;              // Max 100 requests per minute per validator
-const REGISTER_RATE_LIMIT: usize = 5;              // Max 5 registrations per minute per IP/validator
-const CHALLENGE_RATE_LIMIT: usize = 10;            // Max 10 challenge generations per minute
-const TRANSFER_RATE_LIMIT: usize = 20;             // Max 20 transfers per minute per sender
+const GLOBAL_RATE_LIMIT: usize = 1000;             // Max 1000 requests per minute per validator
+const REGISTER_RATE_LIMIT: usize = 10;             // Max 10 registrations per minute per IP/validator
+const CHALLENGE_RATE_LIMIT: usize = 500;           // Max 500 challenge requests per minute (global)
+const TRANSFER_RATE_LIMIT: usize = 50;             // Max 50 transfers per minute per sender
 
 /// Rate limit entry tracking request counts
 #[derive(Clone, Debug)]
