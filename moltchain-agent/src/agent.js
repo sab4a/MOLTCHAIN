@@ -135,22 +135,29 @@ export class MoltchainAgent {
     }
     
     // Get current challenge
-    const challenge = await this.rpc('moltchain_getChallenge', []);
+    let challenge = await this.rpc('moltchain_getChallenge', []);
     
-    if (!challenge) {
-      // No active challenge, try to trigger a new one
+    // If no challenge OR expired, request new one
+    if (!challenge || challenge.remaining_seconds <= 0) {
       console.log('🔄 No active challenge, requesting new one...');
-      const newChallenge = await this.rpc('moltchain_newChallenge', []);
-      if (newChallenge) {
-        console.log(`🎯 New challenge created: ${newChallenge.challenge_hash.slice(0, 16)}...`);
-        await this.solveChallenge(newChallenge);
+      challenge = await this.rpc('moltchain_newChallenge', []);
+      if (!challenge || challenge.remaining_seconds <= 0) {
+        console.log('⏳ No valid challenge available...');
+        return;
       }
-      return;
+      console.log(`🎯 New challenge created: ${challenge.challenge_hash.slice(0, 16)}...`);
     }
 
     // Skip if we already solved this challenge
     if (challenge.challenge_hash === this.lastChallengeHash) {
       console.log('⏳ Waiting for new challenge...');
+      return;
+    }
+
+    // Skip challenges with less than 3 seconds remaining (not enough time to solve)
+    if (challenge.remaining_seconds < 3) {
+      console.log(`⏳ Challenge expiring too soon (${challenge.remaining_seconds}s), waiting for next...`);
+      this.lastChallengeHash = challenge.challenge_hash; // Don't retry this one
       return;
     }
 
@@ -229,6 +236,8 @@ export class MoltchainAgent {
       }
     } else {
       console.log(`❌ Proof rejected: ${result?.error || 'Unknown error'}`);
+      // Mark as processed so we don't retry this challenge
+      this.lastChallengeHash = challenge.challenge_hash;
     }
   }
 
