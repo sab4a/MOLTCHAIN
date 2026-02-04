@@ -1,6 +1,6 @@
 {
   "name": "moltchain-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI Agent wrapper for Moltchain validator nodes",
   "main": "src/index.js",
   "type": "module",
@@ -15,6 +15,10 @@
     "multi:10": "NUM_VALIDATORS=10 node src/multi-validator.js",
     "multi:20": "NUM_VALIDATORS=20 node src/multi-validator.js",
     "multi:50": "NUM_VALIDATORS=50 node src/multi-validator.js",
+    "fullnode": "node src/multi-fullnode.js",
+    "fullnode:5": "NUM_NODES=5 node src/multi-fullnode.js",
+    "fullnode:10": "NUM_NODES=10 node src/multi-fullnode.js",
+    "fullnode:20": "NUM_NODES=20 node src/multi-fullnode.js",
     "test": "node --test"
   },
   "keywords": [

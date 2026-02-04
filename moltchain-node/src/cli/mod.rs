@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "moltchain")]
 #[command(author = "Moltchain Team")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "AI-Validated Sovereign Rollup Node", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]

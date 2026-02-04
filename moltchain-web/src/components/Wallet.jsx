@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useWalletStore, useNetworkStore } from '../hooks/useStore';
 import { formatAddress, formatNumber, api } from '../utils/rpc';
-import { signMessage, sha256, bytesToHex, hexToBytes } from '../utils/crypto';
+import { signTransfer, hexToBytes } from '../utils/crypto';
 
 export default function Wallet() {
   const { 
@@ -137,24 +137,23 @@ export default function Wallet() {
         throw new Error('Invalid recipient address (must be 64 hex characters)');
       }
 
-      // Create the message to sign: to || amount (as 8 bytes LE)
-      const toBytes = hexToBytes(sendTo);
-      const amountBytes = new Uint8Array(8);
-      const view = new DataView(amountBytes.buffer);
-      view.setBigUint64(0, BigInt(amount), true); // little-endian
-      
-      const message = new Uint8Array(toBytes.length + amountBytes.length);
-      message.set(toBytes, 0);
-      message.set(amountBytes, toBytes.length);
+      // Get current nonce from validator info (prevents replay attacks)
+      const currentNonce = activeValidator?.nonce ?? 0;
 
-      // Sign the message
-      const signature = await signMessage(activeAccount.privateKey, message);
+      // Sign the transfer message: to || amount || nonce
+      const signature = await signTransfer(
+        activeAccount.privateKey,
+        sendTo,
+        amount,
+        currentNonce
+      );
 
-      // Send the transfer via RPC
+      // Send the transfer via RPC (includes nonce)
       const result = await api.transfer(
         activeAccount.publicKey,
         sendTo,
         amount,
+        currentNonce,
         signature
       );
 

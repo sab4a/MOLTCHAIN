@@ -14,7 +14,9 @@ use super::challenge::{CognitiveChallenge, ChallengeType, CognitivePuzzle};
 use crate::storage::{Storage, PersistedState};
 
 /// Active validator threshold - validators must have been active within this time to be considered online
-const ACTIVE_THRESHOLD_SECS: u64 = 300; // 5 minutes
+/// For P2P nodes: 90 seconds (3 missed heartbeats)
+/// For RPC-only: 5 minutes (backwards compatible)
+const ACTIVE_THRESHOLD_SECS: u64 = 90; // Reduced from 300 for better P2P presence tracking
 
 /// Validator information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -28,6 +30,8 @@ pub struct ValidatorInfo {
     pub last_active_timestamp: u64, // Unix timestamp of last activity
     #[serde(default)]
     pub is_online: bool,            // Considered online if active in last 5 minutes
+    #[serde(default)]
+    pub nonce: u64,                 // Transaction sequence number to prevent replay attacks
 }
 
 /// Transaction record for history
@@ -41,6 +45,12 @@ pub struct TxRecord {
     pub status: String,
     pub timestamp: u64,
     pub height: u64,
+    /// For block type: list of validators who participated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validators: Option<Vec<String>>,
+    /// Challenge hash for this block
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub challenge_hash: Option<String>,
 }
 
 /// Block header for the rollup
@@ -436,9 +446,10 @@ impl MoltchainState {
                 ref from,
                 ref to,
                 amount,
+                nonce,
                 ref signature,
             } => {
-                self.process_transfer(from, to, amount, signature)
+                self.process_transfer(from, to, amount, nonce, signature)
             }
             MoltTx::RegisterValidator { ref public_key } => {
                 self.register_validator(public_key)
@@ -517,10 +528,12 @@ impl MoltchainState {
             Err(_) => return TxResult::Error("Invalid public key".into()),
         };
         
-        // Message is: challenge_hash || verdict_digest
-        let mut message = Vec::with_capacity(64);
+        // Message is: challenge_hash || verdict_digest || height (8 bytes LE)
+        // Including height prevents replay attacks across different blocks
+        let mut message = Vec::with_capacity(72);
         message.extend_from_slice(challenge_hash);
         message.extend_from_slice(verdict_digest);
+        message.extend_from_slice(&current_challenge.height.to_le_bytes());
         
         let sig = Signature::from_bytes(signature);
         
@@ -583,6 +596,7 @@ impl MoltchainState {
                 last_validation_height: 0,
                 last_active_timestamp: now,
                 is_online: true,
+                nonce: 0,
             });
         
         validator.validations_count += 1;
@@ -638,6 +652,8 @@ impl MoltchainState {
                     .unwrap()
                     .as_secs(),
                 height: current_height,
+                validators: Some(approving_validators.clone()),
+                challenge_hash: Some(hex::encode(challenge_hash)),
             });
             
             // Finalize block
@@ -705,6 +721,7 @@ impl MoltchainState {
         from: &[u8; 32],
         to: &[u8; 32],
         amount: u64,
+        nonce: u64,
         signature: &[u8; 64],
     ) -> TxResult {
         let mut inner = self.inner.write().unwrap();
@@ -722,15 +739,25 @@ impl MoltchainState {
             return TxResult::Error("Insufficient balance".into());
         }
         
+        // Verify nonce to prevent replay attacks
+        if nonce != sender.nonce {
+            return TxResult::Error(format!(
+                "Invalid nonce: expected {}, got {}",
+                sender.nonce, nonce
+            ));
+        }
+        
         // Verify signature
         let verifying_key = match VerifyingKey::from_bytes(from) {
             Ok(k) => k,
             Err(_) => return TxResult::Error("Invalid sender public key".into()),
         };
         
+        // Message is: to || amount || nonce (prevents replay)
         let mut message = Vec::new();
         message.extend_from_slice(to);
         message.extend_from_slice(&amount.to_le_bytes());
+        message.extend_from_slice(&nonce.to_le_bytes());
         
         // Signature::from_bytes doesn't return Result in ed25519-dalek 2.x
         let sig = Signature::from_bytes(signature);
@@ -739,8 +766,10 @@ impl MoltchainState {
             return TxResult::Error("Transfer signature verification failed".into());
         }
         
-        // Execute transfer
-        inner.validators.get_mut(&from_hex).unwrap().balance -= amount;
+        // Execute transfer and increment nonce
+        let sender_mut = inner.validators.get_mut(&from_hex).unwrap();
+        sender_mut.balance -= amount;
+        sender_mut.nonce += 1; // Increment nonce to prevent replay
         
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -757,6 +786,7 @@ impl MoltchainState {
                 last_validation_height: 0,
                 last_active_timestamp: now,
                 is_online: false, // Recipient not necessarily online
+                nonce: 0,
             });
         recipient.balance += amount;
         
@@ -785,6 +815,8 @@ impl MoltchainState {
                 .unwrap()
                 .as_secs(),
             height,
+            validators: None,
+            challenge_hash: None,
         });
         
         TxResult::Success {
@@ -819,6 +851,7 @@ impl MoltchainState {
             last_validation_height: 0,
             last_active_timestamp: now,
             is_online: true, // New registrations are considered online
+            nonce: 0,
         });
         
         // Update total supply
@@ -846,6 +879,8 @@ impl MoltchainState {
                 .unwrap()
                 .as_secs(),
             height,
+            validators: None,
+            challenge_hash: None,
         });
         
         tracing::info!("📝 New validator registered: {}... (funded with {} MOLT)", &pubkey_hex[..16], INITIAL_VALIDATOR_BALANCE);
@@ -901,6 +936,8 @@ impl MoltchainState {
                 .unwrap()
                 .as_secs(),
             height,
+            validators: None,
+            challenge_hash: None,
         });
         
         tracing::warn!(
@@ -1044,6 +1081,12 @@ impl MoltchainState {
         inner.tx_records.iter().rev().take(limit).cloned().collect()
     }
 
+    /// Get a transaction by its hash
+    pub fn get_transaction_by_hash(&self, hash: &str) -> Option<TxRecord> {
+        let inner = self.inner.read().unwrap();
+        inner.tx_records.iter().find(|tx| tx.hash == hash).cloned()
+    }
+
     /// Get transactions with pagination (page is 1-indexed) and optional type filter
     pub fn get_transactions_paginated(&self, page: usize, per_page: usize, tx_type: Option<String>) -> (Vec<TxRecord>, usize) {
         let inner = self.inner.read().unwrap();
@@ -1145,7 +1188,7 @@ impl MoltchainState {
         self.inner.read().unwrap().validators.values().cloned().collect()
     }
     
-    /// Get count of active validators (online in last 5 minutes)
+    /// Get count of active validators (online in last 90 seconds via P2P presence)
     pub fn get_active_validator_count(&self) -> usize {
         let inner = self.inner.read().unwrap();
         let now = std::time::SystemTime::now()
@@ -1158,7 +1201,7 @@ impl MoltchainState {
             .count()
     }
     
-    /// Get all active validators (online in last 5 minutes)
+    /// Get all active validators (online in last 90 seconds via P2P presence)
     pub fn get_active_validators(&self) -> Vec<ValidatorInfo> {
         let inner = self.inner.read().unwrap();
         let now = std::time::SystemTime::now()
@@ -1170,6 +1213,22 @@ impl MoltchainState {
             .filter(|v| now - v.last_active_timestamp < ACTIVE_THRESHOLD_SECS)
             .cloned()
             .collect()
+    }
+    
+    /// Update validator presence from P2P heartbeat
+    /// This is called when we receive a presence message over gossipsub
+    pub fn update_validator_presence(&self, pubkey_hex: &str, timestamp: u64, _height: u64) {
+        let mut inner = self.inner.write().unwrap();
+        
+        if let Some(validator) = inner.validators.get_mut(pubkey_hex) {
+            // Only update if this is a newer timestamp
+            if timestamp > validator.last_active_timestamp {
+                validator.last_active_timestamp = timestamp;
+                validator.is_online = true;
+            }
+        }
+        // Note: We don't create new validators from presence messages
+        // They must register first via the RPC
     }
     
     /// Update online status for all validators (call periodically)

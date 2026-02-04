@@ -70,3 +70,29 @@ export async function sha256(data) {
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   return bytesToHex(new Uint8Array(hashBuffer));
 }
+
+/**
+ * Sign a transfer transaction (to || amount || nonce)
+ * Nonce prevents replay attacks
+ */
+export async function signTransfer(privateKeyHex, toHex, amount, nonce) {
+  const toBytes = hexToBytes(toHex);
+  
+  // Amount as 8 bytes little-endian
+  const amountBuffer = new ArrayBuffer(8);
+  const amountView = new DataView(amountBuffer);
+  amountView.setBigUint64(0, BigInt(amount), true); // little-endian
+  
+  // Nonce as 8 bytes little-endian
+  const nonceBuffer = new ArrayBuffer(8);
+  const nonceView = new DataView(nonceBuffer);
+  nonceView.setBigUint64(0, BigInt(nonce), true); // little-endian
+  
+  // Concatenate: to || amount || nonce
+  const message = new Uint8Array(32 + 8 + 8);
+  message.set(toBytes, 0);
+  message.set(new Uint8Array(amountBuffer), 32);
+  message.set(new Uint8Array(nonceBuffer), 40);
+  
+  return await signMessage(privateKeyHex, message);
+}

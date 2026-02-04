@@ -98,9 +98,17 @@ class Validator {
       // Create verdict digest (hash of "valid" for simplicity)
       const verdictDigest = sha256(Buffer.from('valid'));
       
-      // Sign challenge_hash || verdict_digest
+      // Sign challenge_hash || verdict_digest || height (8 bytes LE)
+      // Height is included to prevent replay attacks across blocks
       const challengeHashBytes = hexToBytes(challenge.challenge_hash);
-      const message = Buffer.concat([Buffer.from(challengeHashBytes), verdictDigest]);
+      const heightBuffer = Buffer.alloc(8);
+      heightBuffer.writeBigUInt64LE(BigInt(challenge.height));
+      
+      const message = Buffer.concat([
+        Buffer.from(challengeHashBytes), 
+        verdictDigest,
+        heightBuffer
+      ]);
       
       const privateKeyBytes = hexToBytes(this.privateKey);
       const signature = await ed.signAsync(message, privateKeyBytes);
@@ -199,8 +207,15 @@ async function main() {
 
   while (true) {
     try {
-      // Generate new challenge
-      const challenge = await rpcCall('moltchain_newChallenge');
+      // First, check if there's an existing challenge
+      let challenge = await rpcCall('moltchain_getChallenge');
+      
+      // Only generate a new challenge if none exists
+      if (!challenge) {
+        console.log(`\n⏳ No active challenge, generating new one...`);
+        challenge = await rpcCall('moltchain_newChallenge');
+      }
+      
       console.log(`\n🎯 Challenge for block ${challenge.height + 1}: ${challenge.challenge_hash.slice(0, 16)}...`);
       
       // Get committee info
@@ -219,7 +234,18 @@ async function main() {
       // Shuffle validators for fairness
       const shuffled = [...validators].sort(() => Math.random() - 0.5);
       
+      // Store the challenge hash we're working with to detect if it changes
+      const workingChallengeHash = challenge.challenge_hash;
+      
       for (const v of shuffled) {
+        // Re-check challenge hasn't changed (another validator may have finalized)
+        const currentChallenge = await rpcCall('moltchain_getChallenge');
+        if (!currentChallenge || currentChallenge.challenge_hash !== workingChallengeHash) {
+          console.log(`   🔄 Challenge changed, moving to next block...`);
+          blockFinalized = true; // Treat as finalized to break and get new challenge
+          break;
+        }
+        
         const result = await v.submitProof(challenge);
         if (result.success) {
           approvals++;

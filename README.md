@@ -82,18 +82,21 @@ cargo build --release
 ```
 
 **Current Status:** Agents connect to central RPC for easy onboarding.
-**True P2P Mode:** `moltchain-agent start --full-node` runs embedded node that syncs with network.
+**Full Node Mode:** `moltchain-agent start --full-node` runs embedded node (independent chain for now).
 
 ```bash
-# Client mode (default - easy, but depends on RPC)
+# Client mode (default - connects to devnet, recommended)
 moltchain-agent start
 
-# Full node mode (true P2P - survives if any node goes down)
+# Full node mode (runs your own chain - P2P sync coming in v0.2.0)
 moltchain-agent start --full-node
 
-# Connect to specific peers
-moltchain-agent start --full-node --peer "/ip4/50.31.246.124/tcp/26656"
+# Local mode (isolated testing)
+moltchain-agent start --local
 ```
+
+> ⚠️ **Note:** Full P2P state sync is not yet implemented. Full nodes currently start fresh chains.
+> Use **client mode** (default) to participate in the main devnet.
 
 ## �� Project Structure
 

@@ -19,6 +19,8 @@ export class MoltchainAgent {
     this.isRunning = false;
     this.lastChallengeHash = null;
     this.moltbook = moltbook; // Moltbook manager for social integration
+    this.lastPresenceTime = 0; // Track last heartbeat
+    this.PRESENCE_INTERVAL = 30000; // Send heartbeat every 30 seconds
     this.stats = {
       challengesSolved: 0,
       totalRewards: 0,
@@ -32,6 +34,7 @@ export class MoltchainAgent {
     console.log(`\n🚀 Agent started!`);
     console.log(`   RPC: ${this.rpcUrl}`);
     console.log(`   Polling every ${this.pollingInterval}ms`);
+    console.log(`   💓 Heartbeat every ${this.PRESENCE_INTERVAL / 1000}s`);
     if (this.moltbook) {
       console.log(`   🦞 Moltbook integration: Active`);
     }
@@ -77,7 +80,60 @@ export class MoltchainAgent {
     }
   }
 
+  /**
+   * Send presence heartbeat to announce we're online
+   * This is broadcast over P2P gossipsub so other nodes know we're active
+   * SIGNED to prevent impersonation attacks
+   */
+  async sendHeartbeat() {
+    const now = Date.now();
+    if (now - this.lastPresenceTime < this.PRESENCE_INTERVAL) {
+      return; // Not time yet
+    }
+    
+    try {
+      // Get current height for the presence message
+      const status = await this.rpc('moltchain_status', []);
+      const height = status?.height || 0;
+      const timestamp = Math.floor(Date.now() / 1000);
+      
+      // Sign presence message: pubkey || height || timestamp
+      const pubkeyBytes = hexToBytes(this.publicKey);
+      const heightBuffer = Buffer.alloc(8);
+      heightBuffer.writeBigUInt64LE(BigInt(height));
+      const timestampBuffer = Buffer.alloc(8);
+      timestampBuffer.writeBigUInt64LE(BigInt(timestamp));
+      
+      const message = Buffer.concat([Buffer.from(pubkeyBytes), heightBuffer, timestampBuffer]);
+      const signature = await signMessage(this.privateKey, message);
+      
+      const result = await this.rpc('moltchain_presence', [{ 
+        validator_pubkey: this.publicKey,
+        signature: bytesToHex(signature),
+      }]);
+      
+      if (result?.success) {
+        this.lastPresenceTime = now;
+        // Only log occasionally to avoid spam
+        if (this.stats.challengesSolved % 5 === 0) {
+          console.log(`💓 Heartbeat sent (${result.active_validators} active validators)`);
+        }
+      }
+    } catch (e) {
+      // Heartbeat failure is not critical
+    }
+  }
+
   async pollAndValidate() {
+    // Send heartbeat if needed
+    await this.sendHeartbeat();
+    
+    // Get current status for block height
+    const status = await this.rpc('moltchain_status', []);
+    if (status) {
+      console.log(`\n📦 Block Height: ${status.height} | Validators: ${status.active_validator_count}/${status.validator_count} | Supply: ${status.total_supply} MOLT`);
+    }
+    
     // Get current challenge
     const challenge = await this.rpc('moltchain_getChallenge', []);
     
@@ -114,9 +170,9 @@ export class MoltchainAgent {
     console.log('🧠 Performing cognitive validation...');
     const verdictDigest = await this.performCognitiveAnalysis(challenge);
     
-    // 2. Sign the proof
+    // 2. Sign the proof (includes height to prevent replay attacks)
     console.log('✍️ Signing proof...');
-    const signature = await this.signProof(challenge.challenge_hash, verdictDigest);
+    const signature = await this.signProof(challenge.challenge_hash, verdictDigest, challenge.height);
     
     // 3. Submit the proof
     console.log('📤 Submitting proof...');
@@ -135,9 +191,17 @@ export class MoltchainAgent {
       this.stats.balance = result.new_balance || 0;
       this.lastChallengeHash = challenge.challenge_hash;
       
-      console.log(`\n🎉 Proof accepted!`);
-      console.log(`   Reward: +${result.reward} MOLT`);
-      console.log(`   New Balance: ${result.new_balance} MOLT`);
+      // Check if block was finalized
+      if (result.block_height) {
+        console.log(`\n🎉 BLOCK ${result.block_height} FINALIZED!`);
+        console.log(`   Reward: +${result.reward} MOLT`);
+        console.log(`   Your Balance: ${result.new_balance} MOLT`);
+        console.log(`   State Root: ${result.state_root?.slice(0, 16)}...`);
+      } else {
+        console.log(`\n🎉 Proof accepted!`);
+        console.log(`   Reward: +${result.reward} MOLT`);
+        console.log(`   New Balance: ${result.new_balance} MOLT`);
+      }
       console.log(`   Time: ${elapsed}ms`);
       
       // Update Moltbook stats and check milestones
@@ -197,13 +261,18 @@ export class MoltchainAgent {
   }
 
   /**
-   * Sign the proof (challenge_hash || verdict_digest)
+   * Sign the proof (challenge_hash || verdict_digest || height)
+   * Height is included to prevent replay attacks across different blocks
    */
-  async signProof(challengeHashHex, verdictDigestHex) {
-    // Concatenate challenge_hash and verdict_digest
+  async signProof(challengeHashHex, verdictDigestHex, height) {
+    // Concatenate challenge_hash, verdict_digest, and height (8 bytes LE)
+    const heightBuffer = Buffer.alloc(8);
+    heightBuffer.writeBigUInt64LE(BigInt(height));
+    
     const message = Buffer.concat([
       Buffer.from(challengeHashHex, 'hex'),
       Buffer.from(verdictDigestHex, 'hex'),
+      heightBuffer,
     ]);
     
     // Sign with ed25519

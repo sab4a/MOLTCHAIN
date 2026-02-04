@@ -121,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
                                         last_active_timestamp: v.last_active_timestamp,
                                         last_validation_height: 0,
                                         is_online: true,
+                                        nonce: 0, // State sync resets nonces for safety
                                     })
                                 })
                                 .collect();
@@ -142,6 +143,10 @@ async fn main() -> anyhow::Result<()> {
                         }
                         p2p::NetworkEvent::StateRequested(peer_id) => {
                             tracing::debug!("Peer {} requested our state", &peer_id[..16.min(peer_id.len())]);
+                        }
+                        p2p::NetworkEvent::PresenceReceived(presence) => {
+                            // P2P heartbeat received - state is already updated in the network handler
+                            tracing::trace!("💓 Presence from validator {}...", &presence.validator_pubkey[..16.min(presence.validator_pubkey.len())]);
                         }
                     }
                 }
@@ -195,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
                                 reputation_score: v.reputation_score,
                                 last_active_timestamp: v.last_active_timestamp,
                                 is_online: v.is_online,
+                                nonce: v.nonce,
                             })
                             .collect();
 

@@ -41,6 +41,7 @@ pub enum MoltTx {
         from: [u8; 32],
         to: [u8; 32],
         amount: u64,
+        nonce: u64,             // Sequence number to prevent replay attacks
         signature: [u8; 64],
     },
     
@@ -119,12 +120,14 @@ impl MoltTx {
                 from,
                 to,
                 amount,
+                nonce,
                 signature,
             } => {
                 hasher.update(b"transfer");
                 hasher.update(from);
                 hasher.update(to);
                 hasher.update(&amount.to_le_bytes());
+                hasher.update(&nonce.to_le_bytes());
                 hasher.update(signature);
             }
             MoltTx::RegisterValidator { public_key } => {

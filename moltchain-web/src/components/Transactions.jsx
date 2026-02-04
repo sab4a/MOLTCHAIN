@@ -13,7 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Users,
+  X,
+  Cpu
 } from 'lucide-react';
 import { useNetworkStore } from '../hooks/useStore';
 import { formatAddress, timeAgo, api } from '../utils/rpc';
@@ -30,6 +33,22 @@ export default function Transactions() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  
+  // Block detail modal state
+  const [selectedBlock, setSelectedBlock] = useState(null);
+  const [blockLoading, setBlockLoading] = useState(false);
+
+  const fetchBlockDetails = async (hash) => {
+    try {
+      setBlockLoading(true);
+      const block = await api.getBlock(hash);
+      setSelectedBlock(block);
+    } catch (err) {
+      console.error('Failed to fetch block:', err);
+    } finally {
+      setBlockLoading(false);
+    }
+  };
 
   const fetchTransactions = async (pageNum = page, typeFilter = filter) => {
     try {
@@ -152,12 +171,18 @@ export default function Transactions() {
           filteredTxs.map((tx) => (
             <div 
               key={tx.hash} 
-              className="card-hover"
+              className={`card-hover ${(tx.tx_type || tx.type) === 'block' ? 'cursor-pointer hover:ring-2 hover:ring-molt-500/50' : ''}`}
+              onClick={() => {
+                if ((tx.tx_type || tx.type) === 'block') {
+                  fetchBlockDetails(tx.hash);
+                }
+              }}
             >
               <div className="flex items-start gap-4">
                 {/* Icon */}
                 <div className={`p-3 rounded-xl ${
                   (tx.tx_type || tx.type) === 'proof' ? 'bg-green-500/10' :
+                  (tx.tx_type || tx.type) === 'block' ? 'bg-green-500/10' :
                   (tx.tx_type || tx.type) === 'transfer' ? 'bg-blue-500/10' :
                   'bg-purple-500/10'
                 }`}>
@@ -177,6 +202,12 @@ export default function Transactions() {
                     {tx.height !== undefined && (
                       <span className="text-xs text-dark-500">
                         Block #{tx.height}
+                      </span>
+                    )}
+                    {(tx.tx_type || tx.type) === 'block' && (
+                      <span className="text-xs text-molt-400 flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        Click for validators
                       </span>
                     )}
                   </div>
@@ -333,6 +364,113 @@ export default function Transactions() {
               >
                 <ChevronsRight className="w-5 h-5" />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Details Modal */}
+      {selectedBlock && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedBlock(null)}
+        >
+          <div 
+            className="bg-dark-900 border border-dark-700 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-dark-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-green-500/10">
+                  <Cpu className="w-6 h-6 text-green-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">Block #{selectedBlock.height}</h2>
+                  <p className="text-sm text-dark-400">
+                    {new Date(selectedBlock.timestamp * 1000).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedBlock(null)}
+                className="p-2 rounded-lg hover:bg-dark-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[60vh] space-y-6">
+              {/* Block Info */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Block Hash</p>
+                  <p className="font-mono text-sm bg-dark-800 p-2 rounded-lg break-all">
+                    {selectedBlock.hash}
+                  </p>
+                </div>
+                
+                {selectedBlock.challenge_hash && (
+                  <div>
+                    <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Challenge Hash</p>
+                    <p className="font-mono text-sm bg-dark-800 p-2 rounded-lg break-all">
+                      {selectedBlock.challenge_hash}
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Reward</p>
+                    <p className="text-green-400 font-semibold">{selectedBlock.amount} MOLT</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Finalized By</p>
+                    <p className="font-mono text-sm">{formatAddress(selectedBlock.from, 8)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Validators */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-5 h-5 text-molt-400" />
+                  <h3 className="font-semibold">Validators Who Worked on This Block</h3>
+                  {selectedBlock.validators && (
+                    <span className="badge bg-molt-500/20 text-molt-400">
+                      {selectedBlock.validators.length} validators
+                    </span>
+                  )}
+                </div>
+
+                {selectedBlock.validators && selectedBlock.validators.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedBlock.validators.map((validator, i) => (
+                      <div 
+                        key={validator}
+                        className="flex items-center gap-3 p-3 bg-dark-800 rounded-lg"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-molt-400 to-molt-600 flex items-center justify-center text-sm font-bold">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-mono text-sm truncate">{validator}</p>
+                        </div>
+                        <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-dark-400">
+                    <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>Validator data not available for this block</p>
+                    <p className="text-sm mt-1">
+                      (Only blocks produced after v0.2.1 include validator info)
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -61,6 +61,49 @@ program
       console.log('🌐 FULL NODE MODE: Running as true P2P peer...');
       console.log('   Your node syncs with the network and can operate independently!\n');
       
+      // First, fetch current state from devnet RPC to bootstrap
+      console.log('📥 Fetching current network state from devnet...');
+      let devnetState = null;
+      try {
+        const statusResponse = await fetch(options.rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'moltchain_status',
+            params: [],
+            id: 1,
+          }),
+        });
+        const statusData = await statusResponse.json();
+        
+        if (statusData.result) {
+          console.log(`   Devnet Height: ${statusData.result.height}`);
+          console.log(`   Validators: ${statusData.result.validator_count}`);
+          console.log(`   Supply: ${statusData.result.total_supply} MOLT`);
+          
+          // Fetch full state for import
+          const stateResponse = await fetch(options.rpc, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'moltchain_exportState',
+              params: [],
+              id: 2,
+            }),
+          });
+          const stateData = await stateResponse.json();
+          if (stateData.result) {
+            devnetState = stateData.result;
+            console.log(`   ✅ State snapshot ready (${devnetState.validators.length} validators)\n`);
+          }
+        }
+      } catch (e) {
+        console.log(`   ⚠️ Could not reach devnet: ${e.message}`);
+        console.log('   Starting with fresh state...\n');
+      }
+      
       embeddedNode = new EmbeddedNode({
         rpcPort: parseInt(options.rpcPort),
         p2pPort: parseInt(options.p2pPort),
@@ -70,10 +113,35 @@ program
       const started = await embeddedNode.start();
       if (started) {
         rpcUrl = embeddedNode.getRpcUrl();
-        console.log(`\n✅ Full P2P Node Active!`);
+        console.log(`✅ Local P2P Node Started!`);
         console.log(`   RPC: ${rpcUrl}`);
         console.log(`   P2P: 0.0.0.0:${embeddedNode.p2pPort}`);
-        console.log(`   State syncing from network...`);
+        
+        // Import devnet state if we got it
+        if (devnetState) {
+          console.log(`\n📥 Syncing state from devnet...`);
+          try {
+            const importResponse = await fetch(rpcUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'moltchain_importState',
+                params: [devnetState],
+                id: 3,
+              }),
+            });
+            const importData = await importResponse.json();
+            if (importData.result?.success) {
+              console.log(`   ✅ State synced! Now at height ${devnetState.height}`);
+              console.log(`   ✅ ${devnetState.validators.length} validators imported`);
+            } else {
+              console.log(`   ⚠️ State import: ${importData.result?.error || importData.error?.message || 'failed'}`);
+            }
+          } catch (e) {
+            console.log(`   ⚠️ State import error: ${e.message}`);
+          }
+        }
         
         if (embeddedNode.peerId) {
           console.log(`\n🔗 Your peer address (share with others):`);

@@ -27,8 +27,14 @@ const TOPIC_CHALLENGES: &str = "moltchain/challenges/1.0.0";
 const TOPIC_PROOFS: &str = "moltchain/proofs/1.0.0";
 const TOPIC_BLOCKS: &str = "moltchain/blocks/1.0.0";
 const TOPIC_STATE_SYNC: &str = "moltchain/state-sync/1.0.0";
+const TOPIC_PRESENCE: &str = "moltchain/presence/1.0.0";
 #[allow(dead_code)]
 const TOPIC_UPGRADES: &str = "moltchain/upgrades/1.0.0";
+
+/// Heartbeat interval for presence announcements (30 seconds)
+pub const PRESENCE_HEARTBEAT_SECS: u64 = 30;
+/// Validators are considered offline if no heartbeat in this time (90 seconds = 3 missed heartbeats)  
+pub const PRESENCE_TIMEOUT_SECS: u64 = 90;
 
 /// Network behaviour combining gossipsub and mDNS
 #[derive(NetworkBehaviour)]
@@ -123,6 +129,56 @@ pub struct ValidatorSnapshot {
     pub last_active_timestamp: u64,
 }
 
+/// Presence/Heartbeat message - validators broadcast their presence regularly
+/// SIGNED to prevent impersonation attacks
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PresenceMessage {
+    /// Validator's public key (hex)
+    pub validator_pubkey: String,
+    /// Current block height the validator is at
+    pub height: u64,
+    /// Timestamp of this heartbeat
+    pub timestamp: u64,
+    /// Node version
+    pub version: String,
+    /// Signature over (pubkey || height || timestamp) - prevents impersonation
+    /// Format: ed25519 signature (64 bytes hex)
+    pub signature: String,
+}
+
+impl PresenceMessage {
+    /// Verify the signature on this presence message
+    pub fn verify_signature(&self) -> bool {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        
+        // Parse public key
+        let pubkey_bytes: [u8; 32] = match hex::decode(&self.validator_pubkey) {
+            Ok(bytes) if bytes.len() == 32 => bytes.try_into().unwrap(),
+            _ => return false,
+        };
+        
+        let verifying_key = match VerifyingKey::from_bytes(&pubkey_bytes) {
+            Ok(k) => k,
+            Err(_) => return false,
+        };
+        
+        // Parse signature
+        let sig_bytes: [u8; 64] = match hex::decode(&self.signature) {
+            Ok(bytes) if bytes.len() == 64 => bytes.try_into().unwrap(),
+            _ => return false,
+        };
+        let signature = Signature::from_bytes(&sig_bytes);
+        
+        // Build message: pubkey || height || timestamp
+        let mut message = Vec::with_capacity(48);
+        message.extend_from_slice(&pubkey_bytes);
+        message.extend_from_slice(&self.height.to_le_bytes());
+        message.extend_from_slice(&self.timestamp.to_le_bytes());
+        
+        verifying_key.verify(&message, &signature).is_ok()
+    }
+}
+
 /// Commands that can be sent to the P2P network from other parts of the system
 #[derive(Clone, Debug)]
 pub enum NetworkCommand {
@@ -132,6 +188,7 @@ pub enum NetworkCommand {
     DialPeer(String),  // Multiaddr as string
     RequestStateSync,  // Request state from peers
     BroadcastState(StateResponseMessage),  // Send state to peers
+    BroadcastPresence(PresenceMessage),  // Heartbeat presence announcement
 }
 
 /// Events emitted by the P2P network to be handled by state
@@ -144,6 +201,7 @@ pub enum NetworkEvent {
     PeerDisconnected(String),
     StateReceived(StateResponseMessage),  // Received state from peer
     StateRequested(String),  // Peer requested our state
+    PresenceReceived(PresenceMessage),  // Validator heartbeat received
 }
 
 /// The P2P network handler
@@ -153,6 +211,7 @@ pub struct MoltchainNetwork {
     proof_topic: IdentTopic,
     block_topic: IdentTopic,
     state_sync_topic: IdentTopic,
+    presence_topic: IdentTopic,
     local_peer_id: String,
     state: MoltchainState,
     command_rx: mpsc::Receiver<NetworkCommand>,
@@ -196,6 +255,12 @@ impl NetworkHandle {
     /// Broadcast our state to peers
     pub async fn broadcast_state(&self, state: StateResponseMessage) -> anyhow::Result<()> {
         self.command_tx.send(NetworkCommand::BroadcastState(state)).await?;
+        Ok(())
+    }
+    
+    /// Broadcast presence/heartbeat
+    pub async fn broadcast_presence(&self, presence: PresenceMessage) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::BroadcastPresence(presence)).await?;
         Ok(())
     }
 }
@@ -257,12 +322,14 @@ impl MoltchainNetwork {
         let proof_topic = IdentTopic::new(TOPIC_PROOFS);
         let block_topic = IdentTopic::new(TOPIC_BLOCKS);
         let state_sync_topic = IdentTopic::new(TOPIC_STATE_SYNC);
+        let presence_topic = IdentTopic::new(TOPIC_PRESENCE);
         
         // Subscribe to topics
         swarm.behaviour_mut().gossipsub.subscribe(&challenge_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&proof_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&block_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&state_sync_topic)?;
+        swarm.behaviour_mut().gossipsub.subscribe(&presence_topic)?;
         
         // Listen on all interfaces
         let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", port).parse()?;
@@ -278,6 +345,7 @@ impl MoltchainNetwork {
             proof_topic,
             block_topic,
             state_sync_topic,
+            presence_topic,
             local_peer_id: local_peer_id.to_string(),
             state,
             command_rx,
@@ -351,6 +419,9 @@ impl MoltchainNetwork {
                     }
                     TOPIC_STATE_SYNC => {
                         self.handle_state_sync_message(&message.data).await;
+                    }
+                    TOPIC_PRESENCE => {
+                        self.handle_presence_message(&message.data).await;
                     }
                     _ => {}
                 }
@@ -589,6 +660,18 @@ impl MoltchainNetwork {
                     }
                 }
             }
+            NetworkCommand::BroadcastPresence(presence) => {
+                // Broadcast our presence/heartbeat
+                if let Ok(data) = serde_json::to_vec(&presence) {
+                    if let Err(e) = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(self.presence_topic.clone(), data)
+                    {
+                        tracing::debug!("Failed to broadcast presence: {}", e);
+                    }
+                }
+            }
         }
     }
     
@@ -684,5 +767,55 @@ impl MoltchainNetwork {
             .gossipsub
             .publish(self.block_topic.clone(), data)?;
         Ok(())
+    }
+    
+    /// Broadcast validator presence/heartbeat
+    pub fn broadcast_presence(&mut self, data: Vec<u8>) -> anyhow::Result<()> {
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(self.presence_topic.clone(), data)?;
+        Ok(())
+    }
+    
+    /// Handle incoming presence/heartbeat message
+    /// SECURITY: Verifies signature to prevent impersonation
+    async fn handle_presence_message(&mut self, data: &[u8]) {
+        match serde_json::from_slice::<PresenceMessage>(data) {
+            Ok(presence) => {
+                // CRITICAL: Verify signature to prevent impersonation
+                if !presence.verify_signature() {
+                    tracing::warn!(
+                        "⚠️ Rejecting unsigned/invalid presence from {}...",
+                        &presence.validator_pubkey[..16.min(presence.validator_pubkey.len())]
+                    );
+                    return;
+                }
+                
+                // Verify timestamp is recent (within 2 minutes) to prevent replay
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                
+                if presence.timestamp > now + 60 || presence.timestamp < now.saturating_sub(120) {
+                    tracing::debug!("Rejecting stale presence message (timestamp: {})", presence.timestamp);
+                    return;
+                }
+                
+                // Update validator's online status in state
+                self.state.update_validator_presence(
+                    &presence.validator_pubkey,
+                    presence.timestamp,
+                    presence.height,
+                );
+                
+                // Emit event for external handlers
+                let _ = self.event_tx.send(NetworkEvent::PresenceReceived(presence)).await;
+            }
+            Err(e) => {
+                tracing::debug!("Failed to parse presence message: {}", e);
+            }
+        }
     }
 }

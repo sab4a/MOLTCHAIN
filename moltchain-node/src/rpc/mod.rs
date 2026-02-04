@@ -7,16 +7,115 @@
 //! - Query state
 
 use std::sync::Arc;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use jsonrpsee::server::{Server, ServerHandle};
 use jsonrpsee::core::{async_trait, RpcResult, SubscriptionResult};
+use jsonrpsee::types::ErrorObjectOwned;
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::PendingSubscriptionSink;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, broadcast, RwLock};
 use tower_http::cors::{CorsLayer, Any};
 
 use crate::stf::{MoltchainState, MoltTx, TxResult, ChallengeResponse as StfChallengeResponse, TxRecord};
 use crate::p2p::NetworkHandle;
+
+// ============ RATE LIMITING ============
+
+/// Rate limiter configuration
+const RATE_LIMIT_WINDOW_SECS: u64 = 60;           // 1 minute window
+const GLOBAL_RATE_LIMIT: usize = 100;              // Max 100 requests per minute per validator
+const REGISTER_RATE_LIMIT: usize = 5;              // Max 5 registrations per minute per IP/validator
+const CHALLENGE_RATE_LIMIT: usize = 10;            // Max 10 challenge generations per minute
+const TRANSFER_RATE_LIMIT: usize = 20;             // Max 20 transfers per minute per sender
+
+/// Rate limit entry tracking request counts
+#[derive(Clone, Debug)]
+struct RateLimitEntry {
+    count: usize,
+    window_start: Instant,
+}
+
+impl RateLimitEntry {
+    fn new() -> Self {
+        Self {
+            count: 1,
+            window_start: Instant::now(),
+        }
+    }
+    
+    /// Check if rate limit is exceeded, and increment counter if not
+    fn check_and_increment(&mut self, limit: usize) -> bool {
+        let now = Instant::now();
+        
+        // Reset if window has passed
+        if now.duration_since(self.window_start) > Duration::from_secs(RATE_LIMIT_WINDOW_SECS) {
+            self.count = 1;
+            self.window_start = now;
+            return true; // Allowed
+        }
+        
+        // Check limit
+        if self.count >= limit {
+            return false; // Rate limited
+        }
+        
+        self.count += 1;
+        true // Allowed
+    }
+}
+
+/// Rate limiter for RPC requests
+#[derive(Clone)]
+pub struct RateLimiter {
+    /// Tracks: (operation_type, key) -> RateLimitEntry
+    /// key can be validator pubkey or IP address
+    entries: Arc<RwLock<HashMap<(String, String), RateLimitEntry>>>,
+}
+
+impl RateLimiter {
+    pub fn new() -> Self {
+        Self {
+            entries: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+    
+    /// Check if an operation is rate limited
+    /// Returns Ok(()) if allowed, Err(message) if rate limited
+    pub async fn check(&self, operation: &str, key: &str, limit: usize) -> Result<(), String> {
+        let mut entries = self.entries.write().await;
+        let cache_key = (operation.to_string(), key.to_string());
+        
+        let entry = entries.entry(cache_key).or_insert_with(RateLimitEntry::new);
+        
+        if entry.check_and_increment(limit) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Rate limit exceeded for {}: max {} requests per {} seconds",
+                operation, limit, RATE_LIMIT_WINDOW_SECS
+            ))
+        }
+    }
+    
+    /// Cleanup old entries (call periodically)
+    pub async fn cleanup(&self) {
+        let mut entries = self.entries.write().await;
+        let now = Instant::now();
+        let window = Duration::from_secs(RATE_LIMIT_WINDOW_SECS * 2);
+        
+        entries.retain(|_, entry| {
+            now.duration_since(entry.window_start) < window
+        });
+    }
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// RPC request/response types
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +153,7 @@ pub struct ValidatorInfoResponse {
     pub reputation_score: u64,
     pub last_active_timestamp: u64,
     pub is_online: bool,
+    pub nonce: u64,                   // Current nonce for transfers (to prevent replay)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -72,11 +172,28 @@ pub struct RegisterValidatorRequest {
     pub public_key: String,
 }
 
+/// Heartbeat/presence request - validators announce they're online
+/// MUST include signature to prevent impersonation
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PresenceRequest {
+    pub validator_pubkey: String,
+    /// Signature over (pubkey || height || timestamp) for authentication
+    /// If not provided, presence will only update local state (not P2P broadcast)
+    pub signature: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PresenceResponse {
+    pub success: bool,
+    pub active_validators: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransferRequest {
     pub from: String,
     pub to: String,
     pub amount: u64,
+    pub nonce: u64,             // Sequence number to prevent replay attacks
     pub signature: String,
 }
 
@@ -123,6 +240,27 @@ pub struct StateSnapshot {
     pub timestamp: u64,
 }
 
+/// Full state export for P2P sync
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FullStateExport {
+    pub height: u64,
+    pub state_root: String,
+    pub total_supply: u64,
+    pub validators: Vec<ValidatorInfoResponse>,
+    pub node_version: String,
+}
+
+/// Node info including P2P peer ID
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeInfoResponse {
+    pub node_version: String,
+    pub peer_id: Option<String>,
+    pub p2p_port: u16,
+    pub rpc_port: u16,
+    pub height: u64,
+    pub validator_count: usize,
+}
+
 /// Event types for subscriptions
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -160,6 +298,10 @@ pub trait MoltchainRpcApi {
     #[method(name = "moltchain_registerValidator")]
     async fn register_validator(&self, req: RegisterValidatorRequest) -> RpcResult<SubmitProofResponse>;
     
+    /// Send presence/heartbeat (announces validator is online)
+    #[method(name = "moltchain_presence")]
+    async fn presence(&self, req: PresenceRequest) -> RpcResult<PresenceResponse>;
+    
     /// Get validator info
     #[method(name = "moltchain_getValidator")]
     async fn get_validator(&self, pubkey: String) -> RpcResult<Option<ValidatorInfoResponse>>;
@@ -176,6 +318,10 @@ pub trait MoltchainRpcApi {
     #[method(name = "moltchain_getTransactions")]
     async fn get_transactions(&self, page: Option<usize>, per_page: Option<usize>, tx_type: Option<String>) -> RpcResult<PaginatedTransactionsResponse>;
 
+    /// Get block/transaction by hash
+    #[method(name = "moltchain_getBlock")]
+    async fn get_block(&self, hash: String) -> RpcResult<Option<TxRecord>>;
+
     /// Get current committee info
     #[method(name = "moltchain_getCommittee")]
     async fn get_committee(&self) -> RpcResult<Option<CommitteeResponse>>;
@@ -183,6 +329,14 @@ pub trait MoltchainRpcApi {
     /// Get full state snapshot (for efficient polling or initial subscription state)
     #[method(name = "moltchain_getState")]
     async fn get_state(&self) -> RpcResult<StateSnapshot>;
+
+    /// Get full state export for P2P sync (validators + balances)
+    #[method(name = "moltchain_exportState")]
+    async fn export_state(&self) -> RpcResult<FullStateExport>;
+
+    /// Import state from another node (for initial sync)
+    #[method(name = "moltchain_importState")]
+    async fn import_state(&self, state: FullStateExport) -> RpcResult<SubmitProofResponse>;
 
     /// Subscribe to state updates
     #[subscription(name = "moltchain_subscribeState" => "moltchain_stateUpdate", unsubscribe = "moltchain_unsubscribeState", item = StateEvent)]
@@ -192,11 +346,12 @@ pub trait MoltchainRpcApi {
 /// Event broadcaster for real-time updates
 pub type EventSender = broadcast::Sender<StateEvent>;
 
-/// RPC server implementation
+/// RPC server implementation with rate limiting
 pub struct MoltchainRpcServerImpl {
     state: Arc<MoltchainState>,
     network: Option<Arc<Mutex<NetworkHandle>>>,
     event_tx: EventSender,
+    rate_limiter: RateLimiter,
 }
 
 impl MoltchainRpcServerImpl {
@@ -205,6 +360,7 @@ impl MoltchainRpcServerImpl {
             state: Arc::new(state),
             network: network.map(|n| Arc::new(Mutex::new(n))),
             event_tx,
+            rate_limiter: RateLimiter::new(),
         }
     }
 
@@ -228,6 +384,7 @@ impl MoltchainRpcServerImpl {
                 reputation_score: v.reputation_score,
                 last_active_timestamp: v.last_active_timestamp,
                 is_online: v.is_online,
+                nonce: v.nonce,
             })
             .collect();
 
@@ -280,6 +437,11 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
     }
     
     async fn new_challenge(&self) -> RpcResult<ChallengeResponse> {
+        // Rate limit challenge generation to prevent spam
+        if let Err(e) = self.rate_limiter.check("new_challenge", "global", CHALLENGE_RATE_LIMIT).await {
+            return Err(ErrorObjectOwned::owned(-32000, e, None::<()>));
+        }
+        
         let c = self.state.generate_challenge();
         
         // Broadcast challenge over P2P if network is available
@@ -445,6 +607,16 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
     }
     
     async fn register_validator(&self, req: RegisterValidatorRequest) -> RpcResult<SubmitProofResponse> {
+        // Rate limit registrations to prevent spam attacks
+        if let Err(e) = self.rate_limiter.check("register", &req.public_key, REGISTER_RATE_LIMIT).await {
+            return Ok(SubmitProofResponse {
+                success: false,
+                reward: None,
+                new_balance: None,
+                error: Some(e),
+            });
+        }
+        
         let public_key: [u8; 32] = match hex::decode(&req.public_key) {
             Ok(bytes) if bytes.len() == 32 => bytes.try_into().unwrap(),
             _ => return Ok(SubmitProofResponse {
@@ -491,6 +663,52 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
         }
     }
     
+    async fn presence(&self, req: PresenceRequest) -> RpcResult<PresenceResponse> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        let height = self.state.get_height();
+        
+        // Update validator's presence in local state (always works)
+        self.state.update_validator_presence(
+            &req.validator_pubkey,
+            now,
+            height,
+        );
+        
+        // Broadcast presence over P2P only if signature is provided
+        if let (Some(network), Some(signature)) = (&self.network, req.signature) {
+            // Verify signature before broadcasting
+            let presence_msg = crate::p2p::PresenceMessage {
+                validator_pubkey: req.validator_pubkey.clone(),
+                height,
+                timestamp: now,
+                version: crate::p2p::NODE_VERSION.to_string(),
+                signature,
+            };
+            
+            // Only broadcast if signature is valid
+            if presence_msg.verify_signature() {
+                let network = network.lock().await;
+                if let Err(e) = network.broadcast_presence(presence_msg).await {
+                    tracing::debug!("Failed to broadcast presence: {}", e);
+                }
+            } else {
+                tracing::warn!(
+                    "⚠️ Invalid presence signature from {}...",
+                    &req.validator_pubkey[..16.min(req.validator_pubkey.len())]
+                );
+            }
+        }
+        
+        Ok(PresenceResponse {
+            success: true,
+            active_validators: self.state.get_active_validator_count(),
+        })
+    }
+    
     async fn get_validator(&self, pubkey: String) -> RpcResult<Option<ValidatorInfoResponse>> {
         Ok(self.state.get_validator(&pubkey).map(|v| ValidatorInfoResponse {
             public_key: hex::encode(v.public_key),
@@ -499,6 +717,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             reputation_score: v.reputation_score,
             last_active_timestamp: v.last_active_timestamp,
             is_online: v.is_online,
+            nonce: v.nonce,
         }))
     }
     
@@ -510,10 +729,20 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             reputation_score: v.reputation_score,
             last_active_timestamp: v.last_active_timestamp,
             is_online: v.is_online,
+            nonce: v.nonce,
         }).collect())
     }
 
     async fn transfer(&self, req: TransferRequest) -> RpcResult<TransferResponse> {
+        // Rate limit transfers per sender
+        if let Err(e) = self.rate_limiter.check("transfer", &req.from, TRANSFER_RATE_LIMIT).await {
+            return Ok(TransferResponse {
+                success: false,
+                tx_hash: None,
+                error: Some(e),
+            });
+        }
+        
         // Parse hex inputs
         let from: [u8; 32] = match hex::decode(&req.from) {
             Ok(bytes) if bytes.len() == 32 => bytes.try_into().unwrap(),
@@ -547,6 +776,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             from,
             to,
             amount: req.amount,
+            nonce: req.nonce,
             signature,
         };
 
@@ -605,6 +835,10 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
         })
     }
 
+    async fn get_block(&self, hash: String) -> RpcResult<Option<TxRecord>> {
+        Ok(self.state.get_transaction_by_hash(&hash))
+    }
+
     async fn get_committee(&self) -> RpcResult<Option<CommitteeResponse>> {
         Ok(self.state.get_committee().map(|c| CommitteeResponse {
             block_height: c.block_height,
@@ -623,6 +857,103 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
 
     async fn get_state(&self) -> RpcResult<StateSnapshot> {
         Ok(self.build_snapshot())
+    }
+
+    async fn export_state(&self) -> RpcResult<FullStateExport> {
+        let validators: Vec<ValidatorInfoResponse> = self.state.get_all_validators()
+            .into_iter()
+            .map(|v| ValidatorInfoResponse {
+                public_key: hex::encode(v.public_key),
+                balance: v.balance,
+                validations_count: v.validations_count,
+                reputation_score: v.reputation_score,
+                last_active_timestamp: v.last_active_timestamp,
+                is_online: v.is_online,
+                nonce: v.nonce,
+            })
+            .collect();
+        
+        Ok(FullStateExport {
+            height: self.state.get_height(),
+            state_root: hex::encode(self.state.get_state_root()),
+            total_supply: self.state.get_total_supply(),
+            validators,
+            node_version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+    }
+
+    async fn import_state(&self, state_export: FullStateExport) -> RpcResult<SubmitProofResponse> {
+        // Only import if we're behind
+        let our_height = self.state.get_height();
+        if state_export.height <= our_height {
+            return Ok(SubmitProofResponse {
+                success: false,
+                reward: None,
+                new_balance: None,
+                error: Some(format!(
+                    "Cannot import older state (ours: {}, theirs: {})",
+                    our_height, state_export.height
+                )),
+            });
+        }
+        
+        tracing::info!(
+            "📥 Importing state: height {} -> {}, {} validators",
+            our_height,
+            state_export.height,
+            state_export.validators.len()
+        );
+        
+        // Convert validators
+        let validators: Vec<crate::stf::ValidatorInfo> = state_export.validators
+            .into_iter()
+            .filter_map(|v| {
+                let pubkey_bytes = hex::decode(&v.public_key).ok()?;
+                if pubkey_bytes.len() != 32 { return None; }
+                let mut pubkey = [0u8; 32];
+                pubkey.copy_from_slice(&pubkey_bytes);
+                Some(crate::stf::ValidatorInfo {
+                    public_key: pubkey,
+                    balance: v.balance,
+                    validations_count: v.validations_count,
+                    reputation_score: v.reputation_score,
+                    last_active_timestamp: v.last_active_timestamp,
+                    last_validation_height: 0,
+                    is_online: v.is_online,
+                    nonce: v.nonce,
+                })
+            })
+            .collect();
+        
+        // Parse state root
+        let state_root_bytes = hex::decode(&state_export.state_root).unwrap_or_default();
+        let mut state_root = [0u8; 32];
+        if state_root_bytes.len() == 32 {
+            state_root.copy_from_slice(&state_root_bytes);
+        }
+        
+        // Apply the state
+        if self.state.apply_peer_state(
+            state_export.height,
+            state_root,
+            state_export.total_supply,
+            validators,
+        ) {
+            tracing::info!("✅ State imported successfully! Now at height {}", state_export.height);
+            Ok(SubmitProofResponse {
+                success: true,
+                reward: None,
+                new_balance: None,
+                error: None,
+            })
+        } else {
+            Ok(SubmitProofResponse {
+                success: false,
+                reward: None,
+                new_balance: None,
+                error: Some("Failed to apply state".into()),
+            })
+        }
     }
 
     async fn subscribe_state(&self, pending: PendingSubscriptionSink) -> SubscriptionResult {

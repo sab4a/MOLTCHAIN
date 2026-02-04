@@ -182,8 +182,10 @@ export const api = {
   getValidator: (pubkey) => rpc('moltchain_getValidator', [pubkey]),
   registerValidator: (publicKey) => rpc('moltchain_registerValidator', [{ public_key: publicKey }]),
   submitProof: (data) => rpc('moltchain_submitProof', [data]),
-  transfer: (from, to, amount, signature) => rpc('moltchain_transfer', [{ from, to, amount, signature }]),
+  // Transfer now requires nonce to prevent replay attacks
+  transfer: (from, to, amount, nonce, signature) => rpc('moltchain_transfer', [{ from, to, amount, nonce, signature }]),
   getTransactions: (page = 1, perPage = 20, txType = null) => rpc('moltchain_getTransactions', [page, perPage, txType]),
+  getBlock: (hash) => rpc('moltchain_getBlock', [hash]),
   getState: () => rpc('moltchain_getState'),
 };
 
