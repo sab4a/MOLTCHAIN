@@ -103,8 +103,8 @@ async fn main() -> anyhow::Result<()> {
                             tracing::info!("📴 Peer disconnected: {}", peer_id);
                         }
                         p2p::NetworkEvent::StateReceived(state_msg) => {
-                            tracing::info!("📥 Received state from peer: height={}, validators={}",
-                                state_msg.height, state_msg.validators.len());
+                            tracing::info!("📥 Received state from peer: height={}, validators={}, txs={}",
+                                state_msg.height, state_msg.validators.len(), state_msg.tx_records.len());
                             
                             // Convert to ValidatorInfo and apply
                             let validators: Vec<stf::ValidatorInfo> = state_msg.validators.iter()
@@ -139,6 +139,25 @@ async fn main() -> anyhow::Result<()> {
                                 validators
                             ) {
                                 tracing::info!("✅ State synced! Now at height {}", state_msg.height);
+                                
+                                // Merge tx_records from peer
+                                if !state_msg.tx_records.is_empty() {
+                                    let tx_records: Vec<stf::TxRecord> = state_msg.tx_records.into_iter()
+                                        .map(|tx| stf::TxRecord {
+                                            hash: tx.hash,
+                                            tx_type: tx.tx_type,
+                                            from: tx.from,
+                                            to: tx.to,
+                                            amount: tx.amount,
+                                            status: tx.status,
+                                            timestamp: tx.timestamp,
+                                            height: tx.height,
+                                            validators: tx.validators,
+                                            challenge_hash: tx.challenge_hash,
+                                        })
+                                        .collect();
+                                    state_for_events.merge_tx_records(tx_records);
+                                }
                             }
                         }
                         p2p::NetworkEvent::StateRequested(peer_id) => {

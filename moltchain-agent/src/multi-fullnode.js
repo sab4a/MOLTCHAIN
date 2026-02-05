@@ -222,7 +222,6 @@ async function main() {
 
   // Create nodes
   console.log(`🔧 Setting up ${NUM_NODES} full nodes...`);
-  const nodes = [];
   for (let i = 0; i < NUM_NODES; i++) {
     const node = new FullNodeValidator(i + 1);
     await node.setup();
@@ -261,16 +260,15 @@ async function main() {
   }
 
   // Validation loop
-  console.log(`\n🎯 Starting validation (all ${NUM_NODES} nodes competing)...\n`);
+  console.log(`\n🎯 Starting validation (all ${NUM_NODES} nodes competing)...`);
+  console.log(`   Press Ctrl+C to stop\n`);
   
-  let totalBlocks = 0;
-  let totalRewards = 0;
-  const startTime = Date.now();
+  startTime = Date.now();
   let lastHeartbeat = 0;
+  let lastStats = 0;
 
-  // Run for 60 seconds
-  const duration = 60000;
-  while (Date.now() - startTime < duration) {
+  // Run forever until Ctrl+C
+  while (true) {
     // Send heartbeats every 10 seconds to stay active
     if (Date.now() - lastHeartbeat > 10000) {
       await Promise.all(nodes.map(n => 
@@ -290,10 +288,27 @@ async function main() {
       }
     }
 
+    // Print stats every 60 seconds
+    if (Date.now() - lastStats > 60000) {
+      const runtime = Math.round((Date.now() - startTime) / 1000);
+      console.log(`\n📊 [${runtime}s] Blocks: ${totalBlocks}, Rewards: ${totalRewards} MOLT\n`);
+      lastStats = Date.now();
+    }
+
     // Small delay
     await new Promise(r => setTimeout(r, 1000));
   }
+}
 
+// Handle SIGINT - graceful shutdown
+let nodes = [];
+let totalBlocks = 0;
+let totalRewards = 0;
+let startTime = 0;
+
+process.on('SIGINT', () => {
+  console.log('\n\n👋 Shutting down...');
+  
   // Final stats
   console.log(`\n${'═'.repeat(60)}`);
   console.log('📊 FINAL STATS:');
@@ -306,7 +321,7 @@ async function main() {
   for (const node of nodes.slice(0, 10)) {
     console.log(`   Node ${node.index}: ${node.stats.blocks} blocks, ${node.stats.rewards} MOLT`);
   }
-
+  
   // Cleanup
   console.log('\n🛑 Stopping all nodes...');
   for (const node of nodes) {
@@ -319,11 +334,6 @@ async function main() {
   }
   
   console.log('✅ Done!\n');
-}
-
-// Handle SIGINT
-process.on('SIGINT', () => {
-  console.log('\n👋 Shutting down...');
   process.exit(0);
 });
 

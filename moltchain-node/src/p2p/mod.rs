@@ -117,6 +117,24 @@ pub struct StateResponseMessage {
     pub state_root: String,
     pub total_supply: u64,
     pub validators: Vec<ValidatorSnapshot>,
+    /// Transaction history for full state replication
+    #[serde(default)]
+    pub tx_records: Vec<TxRecordSnapshot>,
+}
+
+/// Transaction record for state sync
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TxRecordSnapshot {
+    pub hash: String,
+    pub tx_type: String,
+    pub from: String,
+    pub to: Option<String>,
+    pub amount: u64,
+    pub status: String,
+    pub timestamp: u64,
+    pub height: u64,
+    pub validators: Option<Vec<String>>,
+    pub challenge_hash: Option<String>,
 }
 
 /// Validator info for state sync
@@ -283,10 +301,18 @@ impl MoltchainNetwork {
             gossipsub::MessageId::from(hasher.finish().to_string())
         };
         
+        // Configure gossipsub for small networks (1-3 nodes)
+        // Lower mesh requirements so publishing works with fewer peers
         let gossipsub_config = gossipsub::ConfigBuilder::default()
             .heartbeat_interval(Duration::from_secs(10))
             .validation_mode(gossipsub::ValidationMode::Strict)
             .message_id_fn(message_id_fn)
+            // Small network settings - allow publishing with 0 peers
+            .mesh_n(2)           // Target 2 peers in mesh (default: 6)
+            .mesh_n_low(1)       // Minimum 1 peer before grafting (default: 4)
+            .mesh_n_high(4)      // Max 4 peers before pruning (default: 12)
+            .mesh_outbound_min(0) // Don't require outbound peers (default: 2)
+            .gossip_lazy(2)      // Gossip to 2 peers (default: 6)
             .build()
             .map_err(|e| anyhow::anyhow!("Gossipsub config error: {}", e))?;
         
@@ -562,7 +588,7 @@ impl MoltchainNetwork {
                         .gossipsub
                         .publish(self.challenge_topic.clone(), data) 
                     {
-                        tracing::error!("Failed to broadcast challenge: {}", e);
+                        tracing::debug!("P2P broadcast skipped (no peers): {}", e);
                     } else {
                         tracing::info!("📢 Broadcasted challenge for height {}", msg.broadcast_height);
                     }
@@ -583,7 +609,7 @@ impl MoltchainNetwork {
                         .gossipsub
                         .publish(self.proof_topic.clone(), data)
                     {
-                        tracing::error!("Failed to broadcast proof: {}", e);
+                        tracing::debug!("P2P broadcast skipped (no peers): {}", e);
                     } else {
                         tracing::info!("📢 Broadcasted proof submission");
                     }
@@ -602,7 +628,7 @@ impl MoltchainNetwork {
                         .gossipsub
                         .publish(self.block_topic.clone(), data)
                     {
-                        tracing::error!("Failed to broadcast block: {}", e);
+                        tracing::debug!("P2P broadcast skipped (no peers): {}", e);
                     } else {
                         tracing::info!("📢 Broadcasted new block {}", header.height);
                     }
@@ -639,7 +665,7 @@ impl MoltchainNetwork {
                         .gossipsub
                         .publish(self.state_sync_topic.clone(), data)
                     {
-                        tracing::error!("Failed to request state sync: {}", e);
+                        tracing::debug!("P2P state sync request skipped (no peers): {}", e);
                     } else {
                         tracing::info!("📥 Requested state sync from peers (our height: {})", msg.current_height);
                     }
@@ -653,7 +679,7 @@ impl MoltchainNetwork {
                         .gossipsub
                         .publish(self.state_sync_topic.clone(), data)
                     {
-                        tracing::error!("Failed to broadcast state: {}", e);
+                        tracing::debug!("P2P broadcast skipped (no peers): {}", e);
                     } else {
                         tracing::info!("📤 Broadcasted state snapshot (height: {}, {} validators)", 
                             state_response.height, state_response.validators.len());
@@ -700,12 +726,30 @@ impl MoltchainNetwork {
                     })
                     .collect();
                 
+                // Get transaction records (limit to last 1000 for bandwidth)
+                let tx_records: Vec<TxRecordSnapshot> = self.state.get_tx_records_for_sync()
+                    .into_iter()
+                    .map(|tx| TxRecordSnapshot {
+                        hash: tx.hash,
+                        tx_type: tx.tx_type,
+                        from: tx.from,
+                        to: tx.to,
+                        amount: tx.amount,
+                        status: tx.status,
+                        timestamp: tx.timestamp,
+                        height: tx.height,
+                        validators: tx.validators,
+                        challenge_hash: tx.challenge_hash,
+                    })
+                    .collect();
+                
                 let response = StateResponseMessage {
                     responder_peer_id: self.local_peer_id.clone(),
                     height: our_height,
                     state_root: hex::encode(self.state.get_state_root()),
                     total_supply: self.state.get_total_supply(),
                     validators,
+                    tx_records,
                 };
                 
                 if let Ok(response_data) = serde_json::to_vec(&response) {

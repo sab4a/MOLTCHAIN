@@ -323,8 +323,116 @@ impl MoltchainState {
         selected
     }
 
+    /// Finalize an expired challenge with partial approvals
+    /// This prevents blocks from getting stuck when committee can't reach full threshold
+    fn finalize_expired_challenge(&self) {
+        let mut inner = self.inner.write().unwrap();
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        // Check if we have an expired challenge with at least 1 approval
+        let should_finalize = if let Some(ref committee) = inner.current_committee {
+            now > committee.expires_at && committee.approvals >= 1 && !committee.finalized
+        } else {
+            false
+        };
+        
+        if !should_finalize {
+            return;
+        }
+        
+        // Get committee info before mutating
+        let committee = inner.current_committee.as_ref().unwrap();
+        let challenge_hash = committee.challenge_hash;
+        let approving_validators: Vec<String> = committee.members.iter()
+            .filter(|m| m.proof_valid)
+            .map(|m| m.pubkey.clone())
+            .collect();
+        
+        if approving_validators.is_empty() {
+            // No valid proofs, just clear the challenge
+            inner.current_challenge = None;
+            inner.current_committee = None;
+            tracing::info!("⏰ Challenge expired with no valid proofs, clearing");
+            return;
+        }
+        
+        let num_approvers = approving_validators.len() as u64;
+        let reward_per_validator = inner.reward_per_proof / num_approvers.max(1);
+        
+        tracing::info!(
+            "⏰ Challenge expired! Finalizing with {}/{} approvals",
+            num_approvers,
+            committee.members.len()
+        );
+        
+        // Distribute rewards to all approving committee members
+        for approver_pubkey in &approving_validators {
+            if let Some(v) = inner.validators.get_mut(approver_pubkey) {
+                v.balance += reward_per_validator;
+            }
+        }
+        
+        inner.total_supply += reward_per_validator * num_approvers;
+        
+        // Record the transaction
+        let tx_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"block_finalized_partial");
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.update(&challenge_hash);
+            hex::encode::<[u8; 32]>(hasher.finalize().into())
+        };
+        
+        let current_height = inner.height;
+        inner.tx_records.push(TxRecord {
+            hash: tx_hash,
+            tx_type: "block".to_string(),
+            from: approving_validators.first().cloned().unwrap_or_default(),
+            to: None,
+            amount: reward_per_validator * num_approvers,
+            status: "confirmed".to_string(),
+            timestamp: now,
+            height: current_height,
+            validators: Some(approving_validators),
+            challenge_hash: Some(hex::encode(challenge_hash)),
+        });
+        
+        // Finalize block
+        inner.height += 1;
+        
+        // Compute new state root
+        let new_state_root = {
+            let mut hasher = Sha256::new();
+            hasher.update(&inner.state_root);
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.update(&inner.total_supply.to_le_bytes());
+            hasher.update(&challenge_hash);
+            let result: [u8; 32] = hasher.finalize().into();
+            result
+        };
+        inner.state_root = new_state_root;
+        
+        // Clear challenge and committee
+        inner.current_challenge = None;
+        inner.current_committee = None;
+        
+        tracing::info!(
+            "📦 Block {} FINALIZED (partial)! {} validators approved, {} MOLT distributed",
+            inner.height,
+            num_approvers,
+            reward_per_validator * num_approvers
+        );
+    }
+
     /// Generate a new cognitive challenge with committee selection
     pub fn generate_challenge(&self) -> CognitiveChallenge {
+        // First, finalize any expired challenge with partial approvals
+        self.finalize_expired_challenge();
+        
         let mut inner = self.inner.write().unwrap();
         
         // Create challenge hash from current state
@@ -493,6 +601,11 @@ impl MoltchainState {
         
         if &current_challenge.challenge_hash != challenge_hash {
             return TxResult::Error("Challenge hash mismatch".into());
+        }
+        
+        // 1b. Check if challenge has expired
+        if current_challenge.is_expired() {
+            return TxResult::Error("Challenge has expired".into());
         }
         
         // 2. Check if validator is in current committee (if committee exists)
@@ -1079,6 +1192,39 @@ impl MoltchainState {
     pub fn get_transactions(&self, limit: usize) -> Vec<TxRecord> {
         let inner = self.inner.read().unwrap();
         inner.tx_records.iter().rev().take(limit).cloned().collect()
+    }
+
+    /// Get tx_records for P2P state sync (limit to last 1000 for bandwidth)
+    pub fn get_tx_records_for_sync(&self) -> Vec<TxRecord> {
+        let inner = self.inner.read().unwrap();
+        // Return last 1000 transactions for sync
+        let len = inner.tx_records.len();
+        let start = len.saturating_sub(1000);
+        inner.tx_records[start..].to_vec()
+    }
+
+    /// Merge tx_records from peer (for state sync)
+    pub fn merge_tx_records(&self, peer_records: Vec<TxRecord>) {
+        let mut inner = self.inner.write().unwrap();
+        
+        // Build set of existing hashes for dedup
+        let existing_hashes: std::collections::HashSet<_> = 
+            inner.tx_records.iter().map(|tx| tx.hash.clone()).collect();
+        
+        // Add new records that we don't have
+        let mut new_count = 0;
+        for record in peer_records {
+            if !existing_hashes.contains(&record.hash) {
+                inner.tx_records.push(record);
+                new_count += 1;
+            }
+        }
+        
+        if new_count > 0 {
+            // Sort by height to maintain order
+            inner.tx_records.sort_by_key(|tx| tx.height);
+            tracing::info!("📥 Merged {} new transactions from peer", new_count);
+        }
     }
 
     /// Get a transaction by its hash
