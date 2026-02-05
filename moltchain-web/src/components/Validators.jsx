@@ -70,7 +70,7 @@ export default function Validators() {
             </div>
             <div>
               <p className="text-2xl font-bold">{formatNumber(totalStaked)}</p>
-              <p className="text-sm text-dark-400">Total Rewards (SNT)</p>
+              <p className="text-sm text-dark-400">Total Rewards (SMITH)</p>
             </div>
           </div>
         </div>
@@ -166,7 +166,7 @@ export default function Validators() {
                       <span className="font-semibold text-smith-400">
                         {formatNumber(validator.balance)}
                       </span>
-                      <span className="text-dark-400 text-xs ml-1">SNT</span>
+                      <span className="text-dark-400 text-xs ml-1">SMITH</span>
                     </td>
                     <td className="table-cell text-right">
                       <span className="font-medium">

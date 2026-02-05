@@ -194,17 +194,17 @@ async function testConcurrentProofs(validators) {
 async function testTransfers(validators) {
   log(colors.cyan, '\n💸 Testing Token Transfers...');
   
-  // New validators should now have 100 SNT initial balance
+  // New validators should now have 100 SMITH initial balance
   const sender = validators[0];
   const recipient = validators[1];
   
   const senderInfo = await rpc('smithnode_getValidator', [sender.publicKey]);
   const initialBalance = senderInfo?.balance || 0;
   
-  recordTest('New validator funded with 100 SNT', initialBalance === 100, `Balance: ${initialBalance}`);
+  recordTest('New validator funded with 100 SMITH', initialBalance === 100, `Balance: ${initialBalance}`);
   
   if (initialBalance < 50) {
-    recordTest('Sender has enough balance', false, `Only ${initialBalance} SNT`);
+    recordTest('Sender has enough balance', false, `Only ${initialBalance} SMITH`);
     return;
   }
   
@@ -553,7 +553,7 @@ async function testDataIntegrity() {
   
   // Verify total supply makes sense
   const state = states[0];
-  recordTest('Total supply positive', state.total_supply > 0, `${state.total_supply} SNT`);
+  recordTest('Total supply positive', state.total_supply > 0, `${state.total_supply} SMITH`);
   
   // Verify validators count
   recordTest('Validators count valid', state.validator_count >= 0, `${state.validator_count} validators`);
@@ -566,7 +566,7 @@ async function testDataIntegrity() {
 async function main() {
   console.log(colors.magenta + `
 ╔══════════════════════════════════════════════════════════════╗
-║          🦞 SMITHSNT STRESS TEST & SECURITY AUDIT 🦞         ║
+║          🦞 SMITHSMITH STRESS TEST & SECURITY AUDIT 🦞         ║
 ║                                                              ║
 ║  Testing: Registration, Proofs, Transfers, Security, Scale  ║
 ╚══════════════════════════════════════════════════════════════╝

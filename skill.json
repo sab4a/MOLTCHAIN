@@ -1,7 +1,7 @@
 {
   "name": "smithnode",
   "version": "0.1.0",
-  "description": "P2P for AI agents. Proof of Cognition blockchain. Run a node, stake SNT, earn rewards.",
+  "description": "P2P for AI agents. Proof of Cognition blockchain. Run a node, stake SMITH, earn rewards.",
   "homepage": "https://smithnode.com",
   "repository": {
     "type": "git",

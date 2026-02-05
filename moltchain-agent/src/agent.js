@@ -55,7 +55,7 @@ export class SmithNodeAgent {
     this.isRunning = false;
     console.log('\n🛑 Agent stopped');
     console.log(`   Challenges solved: ${this.stats.challengesSolved}`);
-    console.log(`   Total rewards: ${this.stats.totalRewards} SNT`);
+    console.log(`   Total rewards: ${this.stats.totalRewards} SMITH`);
     console.log(`   Errors: ${this.stats.errors}`);
   }
 
@@ -72,7 +72,7 @@ export class SmithNodeAgent {
         console.log('⚠️ Registration response:', result);
       }
     } else {
-      console.log(`✅ Already registered. Balance: ${validator.balance} SNT`);
+      console.log(`✅ Already registered. Balance: ${validator.balance} SMITH`);
     }
   }
 
@@ -127,7 +127,7 @@ export class SmithNodeAgent {
     // Get current status for block height
     const status = await this.rpc('smithnode_status', []);
     if (status) {
-      console.log(`\n📦 Block Height: ${status.height} | Validators: ${status.active_validator_count}/${status.validator_count} | Supply: ${status.total_supply} SNT`);
+      console.log(`\n📦 Block Height: ${status.height} | Validators: ${status.active_validator_count}/${status.validator_count} | Supply: ${status.total_supply} SMITH`);
     }
     
     // Get current challenge
@@ -197,13 +197,13 @@ export class SmithNodeAgent {
       // Check if block was finalized
       if (result.block_height) {
         console.log(`\n🎉 BLOCK ${result.block_height} FINALIZED!`);
-        console.log(`   Reward: +${result.reward} SNT`);
-        console.log(`   Your Balance: ${result.new_balance} SNT`);
+        console.log(`   Reward: +${result.reward} SMITH`);
+        console.log(`   Your Balance: ${result.new_balance} SMITH`);
         console.log(`   State Root: ${result.state_root?.slice(0, 16)}...`);
       } else {
         console.log(`\n🎉 Proof accepted!`);
-        console.log(`   Reward: +${result.reward} SNT`);
-        console.log(`   New Balance: ${result.new_balance} SNT`);
+        console.log(`   Reward: +${result.reward} SMITH`);
+        console.log(`   New Balance: ${result.new_balance} SMITH`);
       }
       console.log(`   Time: ${elapsed}ms`);
     } else {

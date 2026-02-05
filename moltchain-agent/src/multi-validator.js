@@ -16,7 +16,7 @@ ed.etc.sha512Sync = (...m) => {
   return hash.digest();
 };
 
-const RPC_URL = process.env.SMITHSNT_RPC || 'https://smithnode-rpc.fly.dev';
+const RPC_URL = process.env.SMITHSMITH_RPC || 'https://smithnode-rpc.fly.dev';
 const NUM_VALIDATORS = parseInt(process.env.NUM_VALIDATORS || '20');
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '3000');
 
@@ -148,7 +148,7 @@ class Validator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║       🤖 SMITHSNT MULTI-VALIDATOR TEST 🤖                   ║
+║       🤖 SMITHSMITH MULTI-VALIDATOR TEST 🤖                   ║
 ║                                                              ║
 ║   Testing ${NUM_VALIDATORS} validators with committee consensus           ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -161,7 +161,7 @@ async function main() {
   console.log(`📊 Initial Status:`);
   console.log(`   Height: ${initialStatus.height}`);
   console.log(`   Validators: ${initialStatus.validator_count}`);
-  console.log(`   Supply: ${initialStatus.total_supply} SNT\n`);
+  console.log(`   Supply: ${initialStatus.total_supply} SMITH\n`);
 
   // Generate validators
   console.log(`🔑 Generating ${NUM_VALIDATORS} validator keypairs...`);
@@ -194,7 +194,7 @@ async function main() {
   const afterRegStatus = await rpcCall('smithnode_status');
   console.log(`📊 After Registration:`);
   console.log(`   Validators: ${afterRegStatus.validator_count}`);
-  console.log(`   Supply: ${afterRegStatus.total_supply} SNT\n`);
+  console.log(`   Supply: ${afterRegStatus.total_supply} SMITH\n`);
 
   // Start validation loop
   console.log(`🚀 Starting validation loop (Ctrl+C to stop)...\n`);
@@ -252,7 +252,7 @@ async function main() {
           if (result.finalized) {
             blockFinalized = true;
             totalRewards += result.reward;
-            console.log(`   ✅ Validator ${v.index} FINALIZED block! Reward: ${result.reward} SNT`);
+            console.log(`   ✅ Validator ${v.index} FINALIZED block! Reward: ${result.reward} SMITH`);
           } else if (result.reward === 0) {
             console.log(`   ⏳ Validator ${v.index} approved (waiting for threshold)`);
           }
@@ -280,7 +280,7 @@ async function main() {
         // Get updated status
         const status = await rpcCall('smithnode_status');
         console.log(`\n📦 Block ${status.height} finalized!`);
-        console.log(`   Total Supply: ${status.total_supply} SNT`);
+        console.log(`   Total Supply: ${status.total_supply} SMITH`);
         console.log(`   Active Validators: ${status.active_validator_count}`);
         console.log(`   Blocks Produced: ${blocksProduced}`);
         
@@ -289,7 +289,7 @@ async function main() {
         const sorted = allValidators.sort((a, b) => b.balance - a.balance).slice(0, 5);
         console.log(`\n🏆 Top 5 Validators:`);
         sorted.forEach((v, i) => {
-          console.log(`   ${i+1}. ${v.public_key.slice(0, 12)}... - ${v.balance} SNT (${v.validations_count} validations)`);
+          console.log(`   ${i+1}. ${v.public_key.slice(0, 12)}... - ${v.balance} SMITH (${v.validations_count} validations)`);
         });
       }
 

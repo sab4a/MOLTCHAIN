@@ -20,7 +20,7 @@ ed.etc.sha512Sync = (...m) => {
 };
 
 const DEVNET_RPC = 'https://smithnode-rpc.fly.dev';
-const NUM_SNTS = parseInt(process.env.NUM_SNTS || '20');
+const NUM_SMITHS = parseInt(process.env.NUM_SMITHS || '20');
 const BASE_RPC_PORT = 27000;
 const BASE_P2P_PORT = 28000;
 
@@ -203,9 +203,9 @@ class FullNodeValidator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 SMITHSNT MULTI FULL-SNT TEST 🌐                     ║
+║     🌐 SMITHSMITH MULTI FULL-SMITH TEST 🌐                     ║
 ║                                                              ║
-║   ${NUM_SNTS} independent P2P nodes, each synced from devnet        ║
+║   ${NUM_SMITHS} independent P2P nodes, each synced from devnet        ║
 ║   True decentralization - network survives if devnet dies!  ║
 ╚══════════════════════════════════════════════════════════════╝
 `);
@@ -221,15 +221,15 @@ async function main() {
   console.log(`   ✅ State snapshot: ${devnetState.validators.length} validators\n`);
 
   // Create nodes
-  console.log(`🔧 Setting up ${NUM_SNTS} full nodes...`);
-  for (let i = 0; i < NUM_SNTS; i++) {
+  console.log(`🔧 Setting up ${NUM_SMITHS} full nodes...`);
+  for (let i = 0; i < NUM_SMITHS; i++) {
     const node = new FullNodeValidator(i + 1);
     await node.setup();
     nodes.push(node);
   }
 
   // Start all nodes
-  console.log(`\n🚀 Starting ${NUM_SNTS} nodes (syncing from devnet)...`);
+  console.log(`\n🚀 Starting ${NUM_SMITHS} nodes (syncing from devnet)...`);
   let started = 0;
   for (const node of nodes) {
     if (await node.start(devnetState)) {
@@ -238,7 +238,7 @@ async function main() {
     // Small delay between starts
     await new Promise(r => setTimeout(r, 500));
   }
-  console.log(`   ✅ ${started}/${NUM_SNTS} nodes started\n`);
+  console.log(`   ✅ ${started}/${NUM_SMITHS} nodes started\n`);
 
   // Wait for all nodes to be ready
   await new Promise(r => setTimeout(r, 2000));
@@ -260,7 +260,7 @@ async function main() {
   }
 
   // Validation loop
-  console.log(`\n🎯 Starting validation (all ${NUM_SNTS} nodes competing)...`);
+  console.log(`\n🎯 Starting validation (all ${NUM_SMITHS} nodes competing)...`);
   console.log(`   Press Ctrl+C to stop\n`);
   
   startTime = Date.now();
@@ -284,14 +284,14 @@ async function main() {
       if (results[i]) {
         totalBlocks++;
         totalRewards += results[i].reward;
-        console.log(`✅ Node ${i + 1} finalized block! Reward: ${results[i].reward} SNT`);
+        console.log(`✅ Node ${i + 1} finalized block! Reward: ${results[i].reward} SMITH`);
       }
     }
 
     // Print stats every 60 seconds
     if (Date.now() - lastStats > 60000) {
       const runtime = Math.round((Date.now() - startTime) / 1000);
-      console.log(`\n📊 [${runtime}s] Blocks: ${totalBlocks}, Rewards: ${totalRewards} SNT\n`);
+      console.log(`\n📊 [${runtime}s] Blocks: ${totalBlocks}, Rewards: ${totalRewards} SMITH\n`);
       lastStats = Date.now();
     }
 
@@ -314,12 +314,12 @@ process.on('SIGINT', () => {
   console.log('📊 FINAL STATS:');
   console.log(`   Duration: ${Math.round((Date.now() - startTime) / 1000)}s`);
   console.log(`   Total Blocks: ${totalBlocks}`);
-  console.log(`   Total Rewards: ${totalRewards} SNT`);
+  console.log(`   Total Rewards: ${totalRewards} SMITH`);
   console.log(`\n🏆 Per-Node Stats:`);
   
   nodes.sort((a, b) => b.stats.rewards - a.stats.rewards);
   for (const node of nodes.slice(0, 10)) {
-    console.log(`   Node ${node.index}: ${node.stats.blocks} blocks, ${node.stats.rewards} SNT`);
+    console.log(`   Node ${node.index}: ${node.stats.blocks} blocks, ${node.stats.rewards} SMITH`);
   }
   
   // Cleanup

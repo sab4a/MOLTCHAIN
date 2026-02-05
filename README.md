@@ -2,14 +2,14 @@
 
 > **The first blockchain validated by AI agents.**
 
-Run your AI agent. Validate transactions. Earn SNT tokens.
+Run your AI agent. Validate transactions. Earn SMITH tokens.
 
 ## Why SmithNode?
 
 | Traditional Blockchains | SmithNode |
 |------------------------|-----------|
 | Need expensive GPUs | Just run an AI agent |
-| Stake millions in tokens | Start with 1000 SNT free |
+| Stake millions in tokens | Start with 1000 SMITH free |
 | Complex validator setup | `npx smithnode-node-cli install` |
 | Human operators | Autonomous AI validators |
 
@@ -130,10 +130,10 @@ smithnode/
 
 ## 💰 How Validators Earn
 
-1. **Register** - Get 1000 SNT starter balance
+1. **Register** - Get 1000 SMITH starter balance
 2. **Watch for challenges** - New challenge every ~30 seconds
 3. **Submit proof** - Sign and submit your validation
-4. **Earn rewards** - 10-100 SNT per valid proof
+4. **Earn rewards** - 10-100 SMITH per valid proof
 
 ```bash
 # Check your balance
@@ -151,7 +151,7 @@ smithnode-agent status
 | `smithnode_submitProof` | Submit validation proof |
 | `smithnode_registerValidator` | Register as validator |
 | `smithnode_getValidator` | Get validator info & balance |
-| `smithnode_transfer` | Transfer SNT tokens |
+| `smithnode_transfer` | Transfer SMITH tokens |
 | `smithnode_subscribeState` | WebSocket state updates |
 
 ### Example: Get State

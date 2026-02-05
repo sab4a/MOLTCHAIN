@@ -28,7 +28,7 @@ const colors = {
   bold: (s) => `\x1b[1m${s}\x1b[0m`,
 };
 
-const SMITHSNT_DIR = join(homedir(), '.smithnode');
+const SMITHSMITH_DIR = join(homedir(), '.smithnode');
 const REPO_URL = 'https://github.com/smithnode/smithnode-node.git';
 
 program
@@ -44,7 +44,7 @@ program
     console.log(colors.cyan(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🔗 SMITHSNT SNT INSTALLER                                ║
+║   🔗 SMITHSMITH SMITH INSTALLER                                ║
 ║   AI-Validated Sovereign Rollup                              ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -79,12 +79,12 @@ program
       // Step 2: Create directory
       console.log(colors.blue('\n📁 Setting up directories...\n'));
       
-      if (!existsSync(SMITHSNT_DIR)) {
-        mkdirSync(SMITHSNT_DIR, { recursive: true });
+      if (!existsSync(SMITHSMITH_DIR)) {
+        mkdirSync(SMITHSMITH_DIR, { recursive: true });
       }
-      console.log(colors.green(`   ✓ Created ${SMITHSNT_DIR}`));
+      console.log(colors.green(`   ✓ Created ${SMITHSMITH_DIR}`));
 
-      const sourceDir = join(SMITHSNT_DIR, 'source');
+      const sourceDir = join(SMITHSMITH_DIR, 'source');
       if (!existsSync(sourceDir)) {
         mkdirSync(sourceDir, { recursive: true });
       }
@@ -93,7 +93,7 @@ program
       console.log(colors.blue('\n📦 Setting up source code...\n'));
       
       // For local dev, we'll create a bootstrap script
-      const bootstrapPath = join(SMITHSNT_DIR, 'bootstrap.sh');
+      const bootstrapPath = join(SMITHSMITH_DIR, 'bootstrap.sh');
       writeFileSync(bootstrapPath, `#!/bin/bash
 # SmithNode Bootstrap Script
 set -e
@@ -105,7 +105,7 @@ echo "Building SmithNode node..."
 cargo build --release
 
 # Copy binary
-cp target/release/smithnode ${SMITHSNT_DIR}/smithnode
+cp target/release/smithnode ${SMITHSMITH_DIR}/smithnode
 
 echo "Build complete!"
 `);
@@ -115,12 +115,12 @@ echo "Build complete!"
       // Step 4: Create default config
       console.log(colors.blue('\n⚙️ Creating configuration...\n'));
       
-      const configPath = join(SMITHSNT_DIR, 'config.json');
+      const configPath = join(SMITHSMITH_DIR, 'config.json');
       const defaultConfig = {
         rpc_port: 26658,
         p2p_port: 26656,
         celestia_rpc: null, // Optional: Celestia DA integration
-        data_dir: join(SMITHSNT_DIR, 'data'),
+        data_dir: join(SMITHSMITH_DIR, 'data'),
         log_level: 'info',
       };
       writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
@@ -129,7 +129,7 @@ echo "Build complete!"
       // Step 5: Generate keypair
       console.log(colors.blue('\n🔑 Generating validator keypair...\n'));
       
-      const keyPath = join(SMITHSNT_DIR, 'validator-key.json');
+      const keyPath = join(SMITHSMITH_DIR, 'validator-key.json');
       if (!existsSync(keyPath)) {
         // Generate a simple keypair (in production, use proper ed25519)
         const crypto = await import('crypto');
@@ -199,7 +199,7 @@ program
   .action(async (options) => {
     console.log(colors.cyan('🚀 Starting SmithNode node...\n'));
     
-    const binaryPath = join(SMITHSNT_DIR, 'smithnode');
+    const binaryPath = join(SMITHSMITH_DIR, 'smithnode');
     
     if (!existsSync(binaryPath)) {
       console.log(colors.yellow('Node binary not found. Building from source...'));

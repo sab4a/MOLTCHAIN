@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 
-const GITHUB_API = 'https://api.github.com/repos/sab4a/SMITHSNT/releases/latest';
+const GITHUB_API = 'https://api.github.com/repos/sab4a/SMITHSMITH/releases/latest';
 const NPM_REGISTRY = 'https://registry.npmjs.org/smithnode-agent';
 const DEVNET_RPC = 'https://smithnode-rpc.fly.dev';
 

@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use crate::stf::{SmithNodeState, CognitiveChallenge, ChallengeResponse, BlockHeader};
 
 /// Current node version - used for P2P compatibility checks
-pub const SNT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const SMITH_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Topics for gossipsub
 const TOPIC_CHALLENGES: &str = "smithnode/challenges/1.0.0";
@@ -517,7 +517,7 @@ impl SmithNodeNetwork {
                 match self.state.verify_and_apply_proof(&msg.response) {
                     Ok(result) => {
                         tracing::info!(
-                            "🏆 Proof verified! Validator {} earned {} SNT",
+                            "🏆 Proof verified! Validator {} earned {} SMITH",
                             &msg.response.validator_pubkey[..16],
                             result.reward
                         );

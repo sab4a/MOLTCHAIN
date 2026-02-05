@@ -16,9 +16,9 @@
     "multi:20": "NUM_VALIDATORS=20 node src/multi-validator.js",
     "multi:50": "NUM_VALIDATORS=50 node src/multi-validator.js",
     "fullnode": "node src/multi-fullnode.js",
-    "fullnode:5": "NUM_SNTS=5 node src/multi-fullnode.js",
-    "fullnode:10": "NUM_SNTS=10 node src/multi-fullnode.js",
-    "fullnode:20": "NUM_SNTS=20 node src/multi-fullnode.js",
+    "fullnode:5": "NUM_SMITHS=5 node src/multi-fullnode.js",
+    "fullnode:10": "NUM_SMITHS=10 node src/multi-fullnode.js",
+    "fullnode:20": "NUM_SMITHS=20 node src/multi-fullnode.js",
     "test": "node --test"
   },
   "keywords": [

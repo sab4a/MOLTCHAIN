@@ -201,9 +201,9 @@ export function formatNumber(num) {
   return new Intl.NumberFormat().format(num);
 }
 
-export function formatSNT(amount) {
-  if (!amount) return '0 SNT';
-  return `${formatNumber(amount)} SNT`;
+export function formatSMITH(amount) {
+  if (!amount) return '0 SMITH';
+  return `${formatNumber(amount)} SMITH`;
 }
 
 export function timeAgo(timestamp) {

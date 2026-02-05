@@ -310,7 +310,7 @@ pub trait SmithNodeRpcApi {
     #[method(name = "smithnode_getValidators")]
     async fn get_validators(&self) -> RpcResult<Vec<ValidatorInfoResponse>>;
 
-    /// Transfer SNT tokens
+    /// Transfer SMITH tokens
     #[method(name = "smithnode_transfer")]
     async fn transfer(&self, req: TransferRequest) -> RpcResult<TransferResponse>;
 
@@ -372,7 +372,7 @@ impl SmithNodeRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
-            node_version: crate::p2p::SNT_VERSION.to_string(),
+            node_version: crate::p2p::SMITH_VERSION.to_string(),
         };
 
         let validators: Vec<ValidatorInfoResponse> = self.state.get_all_validators()
@@ -420,7 +420,7 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
-            node_version: crate::p2p::SNT_VERSION.to_string(),
+            node_version: crate::p2p::SMITH_VERSION.to_string(),
         })
     }
     
@@ -685,7 +685,7 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
                 validator_pubkey: req.validator_pubkey.clone(),
                 height,
                 timestamp: now,
-                version: crate::p2p::SNT_VERSION.to_string(),
+                version: crate::p2p::SMITH_VERSION.to_string(),
                 signature,
             };
             
@@ -785,7 +785,7 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
         match self.state.apply_tx(tx) {
             TxResult::Success { .. } => {
                 tracing::info!(
-                    "💸 Transfer: {} SNT from {}... to {}...",
+                    "💸 Transfer: {} SMITH from {}... to {}...",
                     req.amount,
                     &req.from[..16],
                     &req.to[..16]

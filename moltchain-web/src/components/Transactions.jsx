@@ -233,10 +233,10 @@ export default function Transactions() {
                 {/* Amount/Reward */}
                 <div className="text-right">
                   {((tx.tx_type || tx.type) === 'proof' || (tx.tx_type || tx.type) === 'block') && tx.amount > 0 && (
-                    <p className="text-green-400 font-semibold">+{tx.amount} SNT</p>
+                    <p className="text-green-400 font-semibold">+{tx.amount} SMITH</p>
                   )}
                   {(tx.tx_type || tx.type) === 'transfer' && tx.amount > 0 && (
-                    <p className="text-blue-400 font-semibold">{tx.amount} SNT</p>
+                    <p className="text-blue-400 font-semibold">{tx.amount} SMITH</p>
                   )}
                   <span className={`badge ${
                     tx.status === 'confirmed' || tx.status === 'success' ? 'badge-success' :
@@ -423,7 +423,7 @@ export default function Transactions() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Reward</p>
-                    <p className="text-green-400 font-semibold">{selectedBlock.amount} SNT</p>
+                    <p className="text-green-400 font-semibold">{selectedBlock.amount} SMITH</p>
                   </div>
                   <div>
                     <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Finalized By</p>

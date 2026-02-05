@@ -19,7 +19,7 @@ pub const GAS_PER_BYTE: u64 = 1;           // Per byte of calldata
 
 /// Default gas price (can be adjusted by governance later)
 #[allow(dead_code)]
-pub const DEFAULT_GAS_PRICE: u64 = 1;      // 1 SNT per gas unit
+pub const DEFAULT_GAS_PRICE: u64 = 1;      // 1 SMITH per gas unit
 
 /// Transaction types supported by SmithNode
 /// Note: Internal transactions use raw bytes, serialization happens at RPC layer
@@ -68,7 +68,7 @@ pub enum NodeTx {
         contract: [u8; 32],     // Contract address
         method: String,         // Method name
         args: Vec<u8>,          // Encoded arguments
-        value: u64,             // SNT to send with call
+        value: u64,             // SMITH to send with call
         gas_limit: u64,
         signature: [u8; 64],
     },

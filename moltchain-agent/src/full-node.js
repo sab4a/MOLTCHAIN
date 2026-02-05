@@ -2,7 +2,7 @@
 /**
  * SmithNode Full Node Agent
  * 
- * Each agent runs a FULL SNT - no central server required!
+ * Each agent runs a FULL SMITH - no central server required!
  * Nodes discover each other via bootstrap peers and sync state.
  * 
  * TRUE P2P: If one node goes down, network continues.
@@ -25,7 +25,7 @@ ed.etc.sha512Sync = (...m) => {
 };
 
 // Bootstrap nodes - these help new nodes find the network
-const BOOTSTRAP_SNTS = [
+const BOOTSTRAP_SMITHS = [
   '/dns4/smithnode-rpc.fly.dev/tcp/9000',  // Fly.io bootstrap
   // Add more bootstrap nodes as network grows
 ];
@@ -102,7 +102,7 @@ class FullNodeAgent {
     ];
 
     // Add bootstrap peers
-    for (const peer of BOOTSTRAP_SNTS) {
+    for (const peer of BOOTSTRAP_SMITHS) {
       args.push('--peer', peer);
     }
 
@@ -115,14 +115,14 @@ class FullNodeAgent {
     this.nodeProcess.stdout.on('data', (data) => {
       const lines = data.toString().split('\n').filter(l => l.trim());
       for (const line of lines) {
-        console.log(`[SNT] ${line}`);
+        console.log(`[SMITH] ${line}`);
       }
     });
 
     this.nodeProcess.stderr.on('data', (data) => {
       const lines = data.toString().split('\n').filter(l => l.trim());
       for (const line of lines) {
-        console.log(`[SNT ERR] ${line}`);
+        console.log(`[SMITH ERR] ${line}`);
       }
     });
 
@@ -195,7 +195,7 @@ class FullNodeAgent {
         }]);
         
         if (result.success && result.reward > 0) {
-          console.log(`🎉 Block finalized! Reward: ${result.reward} SNT`);
+          console.log(`🎉 Block finalized! Reward: ${result.reward} SMITH`);
         }
         
       } catch (e) {
@@ -209,7 +209,7 @@ class FullNodeAgent {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 SMITHSNT FULL SNT AGENT 🌐                          ║
+║     🌐 SMITHSMITH FULL SMITH AGENT 🌐                          ║
 ║                                                              ║
 ║   TRUE P2P: Each agent IS a full node!                       ║
 ║   No central server - network survives if any node dies      ║

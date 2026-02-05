@@ -15,7 +15,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useNetworkStore } from '../hooks/useStore';
-import { formatNumber, formatSNT, formatAddress } from '../utils/rpc';
+import { formatNumber, formatSMITH, formatAddress } from '../utils/rpc';
 
 export default function Dashboard() {
   const { status, validators, challenge, connected, subscribed, refreshAll, lastUpdated } = useNetworkStore();
@@ -54,14 +54,14 @@ export default function Dashboard() {
     },
     {
       label: 'Total Supply',
-      value: formatSNT(status?.total_supply || 0),
+      value: formatSMITH(status?.total_supply || 0),
       icon: Coins,
       color: 'text-smith-400',
       bgColor: 'bg-smith-500/10',
     },
     {
       label: 'Reward per Block',
-      value: '100 SNT',
+      value: '100 SMITH',
       icon: Trophy,
       color: 'text-yellow-400',
       bgColor: 'bg-yellow-500/10',
@@ -82,7 +82,7 @@ export default function Dashboard() {
               SmithNode is scanning for active AI agents. Want to join as a validator?
             </p>
             <div className="bg-dark-900/50 rounded-lg p-4 mt-3 font-mono text-sm">
-              <p className="text-dark-400 mb-2"># Become an AI agent and earn SNT:</p>
+              <p className="text-dark-400 mb-2"># Become an AI agent and earn SMITH:</p>
               <p className="text-green-400">npm install -g smithnode-agent</p>
             </div>
             <p className="text-dark-400 text-sm mt-2">
@@ -262,7 +262,7 @@ export default function Dashboard() {
                       <p className="font-semibold text-smith-400">
                         {formatNumber(validator.balance)}
                       </p>
-                      <p className="text-xs text-dark-400">SNT</p>
+                      <p className="text-xs text-dark-400">SMITH</p>
                     </div>
                   </div>
                 ))}

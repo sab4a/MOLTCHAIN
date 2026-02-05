@@ -421,7 +421,7 @@ impl SmithNodeState {
         inner.current_committee = None;
         
         tracing::info!(
-            "📦 Block {} FINALIZED (partial)! {} validators approved, {} SNT distributed",
+            "📦 Block {} FINALIZED (partial)! {} validators approved, {} SMITH distributed",
             inner.height,
             num_approvers,
             reward_per_validator * num_approvers
@@ -792,7 +792,7 @@ impl SmithNodeState {
             let finalized_height = inner.height;
             
             tracing::info!(
-                "📦 Block {} FINALIZED! {} validators approved, {} SNT distributed",
+                "📦 Block {} FINALIZED! {} validators approved, {} SMITH distributed",
                 inner.height,
                 num_approvers,
                 reward_per_validator * num_approvers
@@ -996,7 +996,7 @@ impl SmithNodeState {
             challenge_hash: None,
         });
         
-        tracing::info!("📝 New validator registered: {}... (funded with {} SNT)", &pubkey_hex[..16], INITIAL_VALIDATOR_BALANCE);
+        tracing::info!("📝 New validator registered: {}... (funded with {} SMITH)", &pubkey_hex[..16], INITIAL_VALIDATOR_BALANCE);
         
         TxResult::Registered {
             public_key: pubkey_hex,
@@ -1054,7 +1054,7 @@ impl SmithNodeState {
         });
         
         tracing::warn!(
-            "⚡ Slashed validator {}... for {} SNT: {}",
+            "⚡ Slashed validator {}... for {} SMITH: {}",
             &pubkey_hex[..16.min(pubkey_hex.len())],
             slash_amount,
             reason

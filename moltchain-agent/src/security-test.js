@@ -28,7 +28,7 @@ async function rpc(method, params = []) {
 
 async function runSecurityAudit() {
   console.log('═'.repeat(60));
-  console.log('🔒 SMITHSNT SECURITY & ARCHITECTURE AUDIT');
+  console.log('🔒 SMITHSMITH SECURITY & ARCHITECTURE AUDIT');
   console.log('═'.repeat(60));
   
   // 1. Check current status
@@ -36,7 +36,7 @@ async function runSecurityAudit() {
   console.log('\n📊 NETWORK STATUS:');
   console.log(`   Height: ${status.height}`);
   console.log(`   Validators: ${status.validator_count} (${status.active_validator_count} active)`);
-  console.log(`   Total Supply: ${status.total_supply} SNT`);
+  console.log(`   Total Supply: ${status.total_supply} SMITH`);
   console.log(`   Version: ${status.node_version}`);
   
   // 2. Test importState security
@@ -153,10 +153,10 @@ async function testMultipleTransfers() {
     console.log('❌ Validator not registered on devnet');
     return;
   }
-  console.log(`   Balance: ${validator.balance} SNT`);
+  console.log(`   Balance: ${validator.balance} SMITH`);
   
   if (validator.balance < 50) {
-    console.log('❌ Insufficient balance for tests (need at least 50 SNT)');
+    console.log('❌ Insufficient balance for tests (need at least 50 SMITH)');
     return;
   }
   
@@ -168,7 +168,7 @@ async function testMultipleTransfers() {
     recipients.push(bytesToHex(pubKey));
   }
   
-  console.log('\n📤 Sending 5 transfers of 1 SNT each...');
+  console.log('\n📤 Sending 5 transfers of 1 SMITH each...');
   
   const results = [];
   for (let i = 0; i < 5; i++) {
@@ -197,7 +197,7 @@ async function testMultipleTransfers() {
       }]);
       
       if (result.success) {
-        console.log(`   ✅ Transfer ${i + 1}: 1 SNT → ${to.substring(0, 12)}... (tx: ${result.tx_hash?.substring(0, 12)}...)`);
+        console.log(`   ✅ Transfer ${i + 1}: 1 SMITH → ${to.substring(0, 12)}... (tx: ${result.tx_hash?.substring(0, 12)}...)`);
         results.push({ success: true, to, txHash: result.tx_hash });
       } else {
         console.log(`   ❌ Transfer ${i + 1} failed: ${result.error}`);
@@ -214,7 +214,7 @@ async function testMultipleTransfers() {
   
   // Verify final balance
   const finalValidator = await rpc('smithnode_getValidator', [keypair.publicKey]);
-  console.log(`   New balance: ${finalValidator.balance} SNT (was ${validator.balance})`);
+  console.log(`   New balance: ${finalValidator.balance} SMITH (was ${validator.balance})`);
   
   // Check if transfers appear in transactions
   const txs = await rpc('smithnode_getTransactions', [1, 10, 'transfer']);
@@ -234,7 +234,7 @@ async function main() {
     console.log('\n📖 ARCHITECTURE SUMMARY:');
     console.log(`
 ┌─────────────────────────────────────────────────────────────┐
-│                  SMITHSNT ARCHITECTURE                     │
+│                  SMITHSMITH ARCHITECTURE                     │
 ├─────────────────────────────────────────────────────────────┤
 │ Is it true P2P?                                             │
 │   - Full nodes: YES (libp2p gossipsub)                      │

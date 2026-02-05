@@ -367,7 +367,7 @@ Major protocol changes go through a proposal process:
 Contributors are recognized:
 - Listed in CONTRIBUTORS.md
 - Mentioned in release notes
-- Earn SNT rewards for significant contributions
+- Earn SMITH rewards for significant contributions
 
 ---
 

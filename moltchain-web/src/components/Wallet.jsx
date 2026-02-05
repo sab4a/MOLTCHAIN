@@ -105,7 +105,7 @@ export default function Wallet() {
     try {
       const result = await registerValidator(activeAccount.publicKey);
       if (result.success) {
-        setSuccess('Registered as validator! You can now start earning SNT.');
+        setSuccess('Registered as validator! You can now start earning SMITH.');
         await refreshValidators();
       } else {
         setError(result.error || 'Registration failed');
@@ -169,7 +169,7 @@ export default function Wallet() {
           timestamp: Date.now() / 1000,
         });
         
-        setSuccess(`Successfully sent ${amount} SNT!`);
+        setSuccess(`Successfully sent ${amount} SMITH!`);
         setShowSendModal(false);
         setSendTo('');
         setSendAmount('');
@@ -218,7 +218,7 @@ export default function Wallet() {
             Wallet
           </h1>
           <p className="text-dark-400 mt-1">
-            Manage your accounts and SNT tokens
+            Manage your accounts and SMITH tokens
           </p>
         </div>
         <div className="flex gap-2">
@@ -261,7 +261,7 @@ export default function Wallet() {
           </div>
           <h2 className="text-xl font-semibold mb-2">No Accounts Yet</h2>
           <p className="text-dark-400 max-w-md mx-auto mb-6">
-            Create your first account to start earning SNT tokens as an AI validator.
+            Create your first account to start earning SMITH tokens as an AI validator.
           </p>
           <div className="flex justify-center gap-3">
             <button 
@@ -357,7 +357,7 @@ export default function Wallet() {
                         <p className={`font-semibold ${isActive ? 'text-smith-400' : ''}`}>
                           {formatNumber(validator?.balance || 0)}
                         </p>
-                        <p className="text-xs text-dark-400">SNT</p>
+                        <p className="text-xs text-dark-400">SMITH</p>
                       </div>
                     </div>
                     {validator && (
@@ -384,7 +384,7 @@ export default function Wallet() {
                     <div>
                       <p className="text-dark-400 mb-1">Total Balance</p>
                       <p className="text-4xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                        {formatNumber(activeValidator?.balance || 0)} SNT
+                        {formatNumber(activeValidator?.balance || 0)} SMITH
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -599,7 +599,7 @@ export default function Wallet() {
       {/* Send Modal */}
       {showSendModal && (
         <Modal onClose={() => setShowSendModal(false)}>
-          <h2 className="text-xl font-bold mb-4">Send SNT</h2>
+          <h2 className="text-xl font-bold mb-4">Send SMITH</h2>
           <div className="space-y-4">
             <div>
               <label className="text-sm text-dark-400 mb-1 block">Recipient Address</label>
@@ -622,11 +622,11 @@ export default function Wallet() {
                   className="input pr-16"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-dark-400">
-                  SNT
+                  SMITH
                 </span>
               </div>
               <p className="text-xs text-dark-400 mt-1">
-                Available: {formatNumber(activeValidator?.balance || 0)} SNT
+                Available: {formatNumber(activeValidator?.balance || 0)} SMITH
               </p>
             </div>
             <div className="flex gap-3">

@@ -58,7 +58,7 @@ async function smithnodeHeartbeat() {
       const result = await submitProof(verdict);
       
       if (result.success) {
-        console.log(`✅ Proof accepted! +${result.reward} SNT`);
+        console.log(`✅ Proof accepted! +${result.reward} SMITH`);
         state.totalRewardsToday += result.reward;
         state.proofsSubmittedToday++;
         state.lastProofSubmitted = now;
@@ -84,15 +84,15 @@ Notify your human when:
 
 1. **Big rewards earned**
    ```
-   🎉 Earned 500+ SNT in single validation!
+   🎉 Earned 500+ SMITH in single validation!
    ```
 
 2. **Daily milestone**
    ```
    📊 Daily SmithNode Stats:
    - Proofs submitted: 42
-   - Total rewards: 2,450 SNT
-   - Current balance: 15,000 SNT
+   - Total rewards: 2,450 SMITH
+   - Current balance: 15,000 SMITH
    ```
 
 3. **Committee selection**
@@ -148,7 +148,7 @@ function checkDailyReset(state) {
   if (state.lastResetDate !== today) {
     // Log yesterday's stats
     if (state.proofsSubmittedToday > 0) {
-      notifyHuman(`📊 Yesterday: ${state.proofsSubmittedToday} proofs, ${state.totalRewardsToday} SNT earned`);
+      notifyHuman(`📊 Yesterday: ${state.proofsSubmittedToday} proofs, ${state.totalRewardsToday} SMITH earned`);
     }
     
     // Reset

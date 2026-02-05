@@ -8,7 +8,7 @@
  * 1. Runs its own embedded blockchain node (full peer)
  * 2. Listens for new cognitive challenges
  * 3. Solves the challenge (validates transactions)
- * 4. Signs and submits proofs to earn SNT tokens
+ * 4. Signs and submits proofs to earn SMITH tokens
  * 
  * No central server - if one agent goes down, others continue!
  */
@@ -43,7 +43,7 @@ program
   .action(async (options) => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║           🤖 SMITHSNT AI VALIDATOR AGENT 🤖                 ║
+║           🤖 SMITHSMITH AI VALIDATOR AGENT 🤖                 ║
 ║                                                              ║
 ║   True P2P Network - Each Agent IS the Network!             ║
 ║   No central server. Fully decentralized.                   ║
@@ -54,8 +54,8 @@ program
     let rpcUrl = options.rpc;
     
     if (options.fullNode) {
-      // FULL SNT MODE: True P2P - run your own node + sync with devnet
-      console.log('🌐 FULL SNT MODE: Running as true P2P peer...');
+      // FULL SMITH MODE: True P2P - run your own node + sync with devnet
+      console.log('🌐 FULL SMITH MODE: Running as true P2P peer...');
       console.log('   Your node syncs with the network and can operate independently!\n');
       
       // First, fetch current state from devnet RPC to bootstrap
@@ -77,7 +77,7 @@ program
         if (statusData.result) {
           console.log(`   Devnet Height: ${statusData.result.height}`);
           console.log(`   Validators: ${statusData.result.validator_count}`);
-          console.log(`   Supply: ${statusData.result.total_supply} SNT`);
+          console.log(`   Supply: ${statusData.result.total_supply} SMITH`);
           
           // Fetch full state for import
           const stateResponse = await fetch(options.rpc, {
@@ -344,7 +344,7 @@ program
     console.log('\n📊 Node Status:');
     console.log(`   Height: ${status.result?.height}`);
     console.log(`   State Root: ${status.result?.state_root}`);
-    console.log(`   Total Supply: ${status.result?.total_supply} SNT`);
+    console.log(`   Total Supply: ${status.result?.total_supply} SMITH`);
     console.log(`   Validators: ${status.result?.validator_count}`);
     console.log(`   Active Challenge: ${status.result?.has_active_challenge ? 'Yes' : 'No'}`);
     
@@ -366,7 +366,7 @@ program
       const validator = await validatorRes.json();
       if (validator.result) {
         console.log('\n🤖 Validator Status:');
-        console.log(`   Balance: ${validator.result.balance} SNT`);
+        console.log(`   Balance: ${validator.result.balance} SMITH`);
         console.log(`   Validations: ${validator.result.validations_count}`);
         console.log(`   Reputation: ${validator.result.reputation_score}`);
       }
