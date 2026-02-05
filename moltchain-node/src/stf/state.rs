@@ -1,4 +1,4 @@
-//! Moltchain State Management
+//! SmithNode State Management
 //!
 //! Core state structure holding balances, challenges, and validator info.
 
@@ -9,7 +9,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
-use super::transaction::{MoltTx, TxResult};
+use super::transaction::{NodeTx, TxResult};
 use super::challenge::{CognitiveChallenge, ChallengeType, CognitivePuzzle};
 use crate::storage::{Storage, PersistedState};
 
@@ -106,9 +106,9 @@ pub struct Epoch {
 #[allow(dead_code)]
 pub const EPOCH_LENGTH: u64 = 100;  // blocks per epoch
 
-/// The core state of Moltchain
+/// The core state of SmithNode
 #[derive(Clone)]
-pub struct MoltchainState {
+pub struct SmithNodeState {
     inner: Arc<RwLock<StateInner>>,
     storage: Arc<Storage>,
 }
@@ -130,13 +130,13 @@ struct StateInner {
     current_committee: Option<BlockCommittee>,
     
     /// Transaction history (for simplicity, in-memory)
-    tx_history: Vec<MoltTx>,
+    tx_history: Vec<NodeTx>,
     
     /// Transaction records with metadata
     tx_records: Vec<TxRecord>,
     
     /// Pending transactions for next block
-    pending_txs: Vec<MoltTx>,
+    pending_txs: Vec<NodeTx>,
     
     /// Total token supply
     total_supply: u64,
@@ -152,7 +152,7 @@ struct StateInner {
     current_epoch: Option<Epoch>,
 }
 
-impl MoltchainState {
+impl SmithNodeState {
     pub fn new() -> Self {
         Self::with_data_dir(Storage::default_data_dir())
     }
@@ -421,7 +421,7 @@ impl MoltchainState {
         inner.current_committee = None;
         
         tracing::info!(
-            "📦 Block {} FINALIZED (partial)! {} validators approved, {} MOLT distributed",
+            "📦 Block {} FINALIZED (partial)! {} validators approved, {} SNT distributed",
             inner.height,
             num_approvers,
             reward_per_validator * num_approvers
@@ -535,9 +535,9 @@ impl MoltchainState {
     }
 
     /// Apply a transaction to the state
-    pub fn apply_tx(&self, tx: MoltTx) -> TxResult {
+    pub fn apply_tx(&self, tx: NodeTx) -> TxResult {
         let result = match tx {
-            MoltTx::SubmitProof {
+            NodeTx::SubmitProof {
                 ref validator_pubkey,
                 ref challenge_hash,
                 ref signature,
@@ -550,7 +550,7 @@ impl MoltchainState {
                     verdict_digest,
                 )
             }
-            MoltTx::Transfer {
+            NodeTx::Transfer {
                 ref from,
                 ref to,
                 amount,
@@ -559,14 +559,14 @@ impl MoltchainState {
             } => {
                 self.process_transfer(from, to, amount, nonce, signature)
             }
-            MoltTx::RegisterValidator { ref public_key } => {
+            NodeTx::RegisterValidator { ref public_key } => {
                 self.register_validator(public_key)
             }
             // Smart contract transactions - not implemented yet
-            MoltTx::DeployContract { .. } => {
+            NodeTx::DeployContract { .. } => {
                 TxResult::Error("Smart contracts not yet implemented".into())
             }
-            MoltTx::CallContract { .. } => {
+            NodeTx::CallContract { .. } => {
                 TxResult::Error("Smart contracts not yet implemented".into())
             }
         };
@@ -792,7 +792,7 @@ impl MoltchainState {
             let finalized_height = inner.height;
             
             tracing::info!(
-                "📦 Block {} FINALIZED! {} validators approved, {} MOLT distributed",
+                "📦 Block {} FINALIZED! {} validators approved, {} SNT distributed",
                 inner.height,
                 num_approvers,
                 reward_per_validator * num_approvers
@@ -996,7 +996,7 @@ impl MoltchainState {
             challenge_hash: None,
         });
         
-        tracing::info!("📝 New validator registered: {}... (funded with {} MOLT)", &pubkey_hex[..16], INITIAL_VALIDATOR_BALANCE);
+        tracing::info!("📝 New validator registered: {}... (funded with {} SNT)", &pubkey_hex[..16], INITIAL_VALIDATOR_BALANCE);
         
         TxResult::Registered {
             public_key: pubkey_hex,
@@ -1054,7 +1054,7 @@ impl MoltchainState {
         });
         
         tracing::warn!(
-            "⚡ Slashed validator {}... for {} MOLT: {}",
+            "⚡ Slashed validator {}... for {} SNT: {}",
             &pubkey_hex[..16.min(pubkey_hex.len())],
             slash_amount,
             reason
@@ -1420,7 +1420,7 @@ impl MoltchainState {
             .map_err(|_| "Invalid verdict digest length")?;
         
         // Apply the proof submission
-        let tx = MoltTx::SubmitProof {
+        let tx = NodeTx::SubmitProof {
             validator_pubkey,
             challenge_hash,
             signature,
@@ -1473,7 +1473,7 @@ impl MoltchainState {
     pub fn get_pending_proof_count(&self) -> u64 {
         let inner = self.inner.read().unwrap();
         inner.pending_txs.iter()
-            .filter(|tx| matches!(tx, MoltTx::SubmitProof { .. }))
+            .filter(|tx| matches!(tx, NodeTx::SubmitProof { .. }))
             .count() as u64
     }
 
@@ -1489,7 +1489,7 @@ pub struct ProofResult {
     pub new_balance: u64,
 }
 
-impl Default for MoltchainState {
+impl Default for SmithNodeState {
     fn default() -> Self {
         Self::new()
     }

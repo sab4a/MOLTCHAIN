@@ -1,17 +1,17 @@
-# fly.toml app configuration file generated for moltchain-rpc on 2026-02-03T21:28:30+04:00
+# fly.toml app configuration file for smithnode-rpc
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'moltchain-rpc'
+app = 'smithnode-rpc'
 primary_region = 'iad'
 
 [build]
 
 # Persistent storage for blockchain state
 [mounts]
-  source = 'moltchain_data'
-  destination = '/root/.moltchain'
+  source = 'smithnode_data'
+  destination = '/root/.smithnode'
 
 # RPC endpoint (HTTP/WebSocket)
 [http_service]

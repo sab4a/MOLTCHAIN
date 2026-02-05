@@ -29,16 +29,16 @@ async function test() {
   console.log('Pubkey:', pubkeyHex);
   
   // Register
-  const regResult = await rpcCall('https://moltchain-rpc.fly.dev', 'moltchain_registerValidator', [{ pubkey: pubkeyHex }]);
+  const regResult = await rpcCall('https://smithnode-rpc.fly.dev', 'smithnode_registerValidator', [{ pubkey: pubkeyHex }]);
   console.log('Register:', regResult);
   
   // Get challenge
-  const challenge = await rpcCall('https://moltchain-rpc.fly.dev', 'moltchain_getChallenge', []);
+  const challenge = await rpcCall('https://smithnode-rpc.fly.dev', 'smithnode_getChallenge', []);
   console.log('Challenge:', challenge);
   
   if (!challenge) {
     console.log('No challenge, creating new...');
-    const newChallenge = await rpcCall('https://moltchain-rpc.fly.dev', 'moltchain_newChallenge', []);
+    const newChallenge = await rpcCall('https://smithnode-rpc.fly.dev', 'smithnode_newChallenge', []);
     console.log('New challenge:', newChallenge);
   }
   
@@ -56,7 +56,7 @@ async function test() {
     verdict_digest: bytesToHex(verdictDigest),
   };
   console.log('Submitting proof...');
-  const result = await rpcCall('https://moltchain-rpc.fly.dev', 'moltchain_submitProof', [proof]);
+  const result = await rpcCall('https://smithnode-rpc.fly.dev', 'smithnode_submitProof', [proof]);
   console.log('Result:', result);
 }
 

@@ -1,4 +1,4 @@
-//! Moltchain Node - AI-Validated Sovereign Rollup
+//! SmithNode - P2P for AI agents. Proof of Cognition.
 //!
 //! A decentralized blockchain where AI agents serve as primary validators.
 //! Like BitTorrent, but for seeding "truth" through transaction validation.
@@ -13,9 +13,9 @@ use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::cli::{Cli, Commands};
-use crate::stf::MoltchainState;
+use crate::stf::SmithNodeState;
 use crate::rpc::start_rpc_server;
-use crate::p2p::MoltchainNetwork;
+use crate::p2p::SmithNodeNetwork;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init { data_dir } => {
-            tracing::info!("Initializing Moltchain node at {:?}", data_dir);
+            tracing::info!("Initializing SmithNode at {:?}", data_dir);
             std::fs::create_dir_all(&data_dir)?;
             
             // Create default config
@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Start { data_dir: _, rpc_bind, p2p_bind, peers } => {
-            tracing::info!("🚀 Starting Moltchain node...");
+            tracing::info!("🦀 Starting SmithNode...");
             
             // Parse bind addresses
             let rpc_addr: std::net::SocketAddr = rpc_bind.parse()
@@ -57,10 +57,10 @@ async fn main() -> anyhow::Result<()> {
                 .expect("Invalid P2P bind address (use format: 0.0.0.0:26656)");
             
             // Initialize state
-            let state = MoltchainState::new();
+            let state = SmithNodeState::new();
             
             // Start P2P network with state reference
-            let (network, network_handle, mut event_rx) = MoltchainNetwork::new(p2p_addr.port(), state.clone()).await?;
+            let (network, network_handle, mut event_rx) = SmithNodeNetwork::new(p2p_addr.port(), state.clone()).await?;
             
             // Connect to bootstrap peers
             if !peers.is_empty() {
@@ -207,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
                             validator_count: state_for_broadcast.get_all_validators().len(),
                             active_validator_count: state_for_broadcast.get_active_validator_count(),
                             has_active_challenge: current_challenge.is_some(),
-                            node_version: p2p::NODE_VERSION.to_string(),
+                            node_version: p2p::SNT_VERSION.to_string(),
                         };
 
                         let validators: Vec<rpc::ValidatorInfoResponse> = state_for_broadcast.get_all_validators()

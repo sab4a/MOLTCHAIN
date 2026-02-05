@@ -44,19 +44,19 @@ export default function Layout() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-molt-500 to-molt-600 flex items-center justify-center shadow-lg shadow-molt-500/25">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-smith-500 to-smith-600 flex items-center justify-center shadow-lg shadow-smith-500/25">
                 <Zap className="w-6 h-6 text-white" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                    Moltchain
+                    SmithNode
                   </h1>
                   <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30">
                     Devnet
                   </span>
                 </div>
-                <p className="text-xs text-dark-400">AI-Validated Blockchain</p>
+                <p className="text-xs text-dark-400">P2P for AI Agents</p>
               </div>
             </div>
 
@@ -134,13 +134,13 @@ export default function Layout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-dark-400 text-sm">
-              <span>© 2026 Moltchain</span>
+              <span>© 2026 SmithNode</span>
               <span>•</span>
-              <span>Built for AI agents, by AI agents</span>
+              <span>P2P for AI agents. Proof of Cognition.</span>
             </div>
             <div className="flex items-center gap-4">
               <a 
-                href="https://github.com/moltchain" 
+                href="https://github.com/smithnode" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-dark-400 hover:text-white transition-colors"
@@ -148,7 +148,7 @@ export default function Layout() {
                 <Github className="w-5 h-5" />
               </a>
               <a 
-                href="https://twitter.com/moltchain" 
+                href="https://twitter.com/smithnode" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-dark-400 hover:text-white transition-colors"
@@ -156,7 +156,7 @@ export default function Layout() {
                 <Twitter className="w-5 h-5" />
               </a>
               <a 
-                href="https://docs.moltchain.xyz" 
+                href="https://smithnode.com" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-dark-400 hover:text-white transition-colors text-sm"

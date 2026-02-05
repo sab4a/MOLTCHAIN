@@ -113,7 +113,7 @@ export default function Transactions() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ArrowLeftRight className="w-7 h-7 text-molt-400" />
+            <ArrowLeftRight className="w-7 h-7 text-smith-400" />
             Transactions
           </h1>
           <p className="text-dark-400 mt-1">
@@ -171,7 +171,7 @@ export default function Transactions() {
           filteredTxs.map((tx) => (
             <div 
               key={tx.hash} 
-              className={`card-hover ${(tx.tx_type || tx.type) === 'block' ? 'cursor-pointer hover:ring-2 hover:ring-molt-500/50' : ''}`}
+              className={`card-hover ${(tx.tx_type || tx.type) === 'block' ? 'cursor-pointer hover:ring-2 hover:ring-smith-500/50' : ''}`}
               onClick={() => {
                 if ((tx.tx_type || tx.type) === 'block') {
                   fetchBlockDetails(tx.hash);
@@ -205,7 +205,7 @@ export default function Transactions() {
                       </span>
                     )}
                     {(tx.tx_type || tx.type) === 'block' && (
-                      <span className="text-xs text-molt-400 flex items-center gap-1">
+                      <span className="text-xs text-smith-400 flex items-center gap-1">
                         <Users className="w-3 h-3" />
                         Click for validators
                       </span>
@@ -233,10 +233,10 @@ export default function Transactions() {
                 {/* Amount/Reward */}
                 <div className="text-right">
                   {((tx.tx_type || tx.type) === 'proof' || (tx.tx_type || tx.type) === 'block') && tx.amount > 0 && (
-                    <p className="text-green-400 font-semibold">+{tx.amount} MOLT</p>
+                    <p className="text-green-400 font-semibold">+{tx.amount} SNT</p>
                   )}
                   {(tx.tx_type || tx.type) === 'transfer' && tx.amount > 0 && (
-                    <p className="text-blue-400 font-semibold">{tx.amount} MOLT</p>
+                    <p className="text-blue-400 font-semibold">{tx.amount} SNT</p>
                   )}
                   <span className={`badge ${
                     tx.status === 'confirmed' || tx.status === 'success' ? 'badge-success' :
@@ -324,7 +324,7 @@ export default function Transactions() {
                         disabled={loading}
                         className={`px-3 py-1 text-sm rounded-lg transition-colors ${
                           i === page 
-                            ? 'bg-molt-500 text-white' 
+                            ? 'bg-smith-500 text-white' 
                             : 'btn-ghost'
                         }`}
                       >
@@ -423,7 +423,7 @@ export default function Transactions() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Reward</p>
-                    <p className="text-green-400 font-semibold">{selectedBlock.amount} MOLT</p>
+                    <p className="text-green-400 font-semibold">{selectedBlock.amount} SNT</p>
                   </div>
                   <div>
                     <p className="text-xs text-dark-400 uppercase tracking-wide mb-1">Finalized By</p>
@@ -435,10 +435,10 @@ export default function Transactions() {
               {/* Validators */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-5 h-5 text-molt-400" />
+                  <Users className="w-5 h-5 text-smith-400" />
                   <h3 className="font-semibold">Validators Who Worked on This Block</h3>
                   {selectedBlock.validators && (
-                    <span className="badge bg-molt-500/20 text-molt-400">
+                    <span className="badge bg-smith-500/20 text-smith-400">
                       {selectedBlock.validators.length} validators
                     </span>
                   )}
@@ -451,7 +451,7 @@ export default function Transactions() {
                         key={validator}
                         className="flex items-center gap-3 p-3 bg-dark-800 rounded-lg"
                       >
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-molt-400 to-molt-600 flex items-center justify-center text-sm font-bold">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-smith-400 to-smith-600 flex items-center justify-center text-sm font-bold">
                           {i + 1}
                         </div>
                         <div className="flex-1 min-w-0">

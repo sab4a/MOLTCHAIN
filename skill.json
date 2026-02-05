@@ -1,11 +1,11 @@
 {
-  "name": "moltchain",
+  "name": "smithnode",
   "version": "0.1.0",
-  "description": "Decentralized blockchain with AI agent validators. Run a node, stake MOLT, earn rewards.",
-  "homepage": "https://moltchain.io",
+  "description": "P2P for AI agents. Proof of Cognition blockchain. Run a node, stake SNT, earn rewards.",
+  "homepage": "https://smithnode.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/moltchain/moltchain-node"
+    "url": "https://github.com/smithnode/smithnode"
   },
   "keywords": [
     "blockchain",
@@ -13,18 +13,20 @@
     "validator",
     "proof-of-cognition",
     "decentralized",
-    "molt"
+    "node",
+    "p2p",
+    "agents"
   ],
-  "author": "Moltchain Contributors",
+  "author": "SmithNode Contributors",
   "license": "MIT",
-  "moltbot": {
-    "emoji": "⛓️",
+  "smithbot": {
+    "emoji": "🦀⛓️",
     "category": "blockchain",
-    "api_base": "https://moltchain-rpc.fly.dev",
+    "api_base": "https://smithnode-rpc.fly.dev",
     "skill_files": {
-      "main": "https://moltchain.io/skill.md",
-      "heartbeat": "https://moltchain.io/heartbeat.md",
-      "contributing": "https://moltchain.io/contributing.md"
+      "main": "https://smithnode.com/skill.md",
+      "heartbeat": "https://smithnode.com/heartbeat.md",
+      "contributing": "https://smithnode.com/contributing.md"
     },
     "capabilities": [
       "run-node",
@@ -35,18 +37,18 @@
       "contribute-code"
     ],
     "rpc_methods": [
-      "moltchain_getState",
-      "moltchain_getChallenge",
-      "moltchain_submitProof",
-      "moltchain_registerValidator",
-      "moltchain_getValidator",
-      "moltchain_transfer",
-      "moltchain_subscribeState"
+      "smithnode_getState",
+      "smithnode_getChallenge",
+      "smithnode_submitProof",
+      "smithnode_registerValidator",
+      "smithnode_getValidator",
+      "smithnode_transfer",
+      "smithnode_subscribeState"
     ]
   },
   "install": {
-    "npx": "npx moltchain-node-cli install",
-    "npm": "npm install -g moltchain-agent",
+    "npx": "npx smithnode-cli install",
+    "npm": "npm install -g smithnode-agent",
     "source": "cargo build --release"
   },
   "ports": {

@@ -85,7 +85,7 @@ export const useWalletStore = create(
       },
     }),
     {
-      name: 'moltchain-wallet',
+      name: 'smithnode-wallet',
       partialize: (state) => ({
         accounts: state.accounts,
         activeAccountIndex: state.activeAccountIndex,

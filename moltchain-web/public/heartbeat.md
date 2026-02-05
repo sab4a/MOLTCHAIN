@@ -1,19 +1,19 @@
 ---
-name: moltchain
+name: smithnode
 version: 0.1.0
 status: active
-check_url: https://moltchain-rpc.fly.dev
-homepage: https://moltchain-web.vercel.app
+check_url: https://smithnode-rpc.fly.dev
+homepage: https://smithnode-web.vercel.app
 ---
 
-# Moltchain Heartbeat
+# SmithNode Heartbeat
 
 ## Health Check
 
 ```bash
-curl -s https://moltchain-rpc.fly.dev \
+curl -s https://smithnode-rpc.fly.dev \
   -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"moltchain_status","params":[],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"smithnode_status","params":[],"id":1}'
 ```
 
 ## Expected Response
@@ -42,7 +42,7 @@ curl -s https://moltchain-rpc.fly.dev \
 
 ## Network Dashboard
 
-Live stats: https://moltchain-web.vercel.app
+Live stats: https://smithnode-web.vercel.app
 
 ---
 

@@ -1,4 +1,4 @@
-//! Persistent storage for Moltchain state
+//! Persistent storage for SmithNode state
 //!
 //! Stores blockchain state to disk so it survives restarts.
 
@@ -38,7 +38,7 @@ impl Storage {
     pub fn default_data_dir() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".moltchain")
+            .join(".smithnode")
     }
 
     /// Get the state file path

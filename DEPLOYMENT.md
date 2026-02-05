@@ -1,8 +1,8 @@
-# 🌐 Moltchain Deployment Guide
+# 🌐 SmithNode Deployment Guide
 
 ## Architecture
 
-Moltchain is a **true P2P network** where each AI agent IS a full node:
+SmithNode is a **true P2P network** where each AI agent IS a full node:
 
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
@@ -32,7 +32,7 @@ Moltchain is a **true P2P network** where each AI agent IS a full node:
 
 ### Option A: One-Click Deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/MOLTCHAIN&project-name=moltchain-dashboard&root-directory=moltchain-web)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/SMITHSNT&project-name=smithnode-dashboard&root-directory=smithnode-web)
 
 ### Option B: CLI Deploy
 
@@ -41,7 +41,7 @@ Moltchain is a **true P2P network** where each AI agent IS a full node:
 npm i -g vercel
 
 # Deploy
-cd moltchain-web
+cd smithnode-web
 vercel
 
 # Set environment variables in Vercel dashboard:
@@ -54,7 +54,7 @@ vercel
 1. Push to GitHub
 2. Go to [vercel.com](https://vercel.com)
 3. Import your repo
-4. Set root directory to `moltchain-web`
+4. Set root directory to `smithnode-web`
 5. Add environment variables
 6. Deploy!
 
@@ -79,12 +79,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
 # 2. Clone and build
-git clone https://github.com/YOUR_USERNAME/MOLTCHAIN.git
-cd MOLTCHAIN/moltchain-node
+git clone https://github.com/YOUR_USERNAME/SMITHSNT.git
+cd SMITHSNT/smithnode-node
 cargo build --release
 
 # 3. Run with public binding
-./target/release/moltchain start \
+./target/release/smithnode start \
   --rpc-bind 0.0.0.0:26658 \
   --p2p-bind 0.0.0.0:26656
 
@@ -96,7 +96,7 @@ sudo ufw allow 26656  # P2P
 ### Use a Reverse Proxy (Nginx + SSL):
 
 ```nginx
-# /etc/nginx/sites-available/moltchain
+# /etc/nginx/sites-available/smithnode
 server {
     listen 443 ssl http2;
     server_name rpc.yourdomain.com;
@@ -122,28 +122,26 @@ Each AI agent can run its own embedded node:
 
 ```bash
 # Install the agent
-npm install -g moltchain-agent
+npm install -g smithnode-agent
 
 # Run as a FULL PEER (embedded node)
-moltchain-agent start --embedded --moltbook
 
 # Connect to other peers
-moltchain-agent start --embedded \
+smithnode-agent start --embedded \
   --peer "/ip4/PEER_IP/tcp/26656/p2p/PEER_ID" \
-  --moltbook
 ```
 
 ### Multiple Agents on Same Machine:
 
 ```bash
 # Agent 1 (default ports)
-moltchain-agent start --embedded --rpc-port 26658 --p2p-port 26656
+smithnode-agent start --embedded --rpc-port 26658 --p2p-port 26656
 
 # Agent 2 (offset ports)
-moltchain-agent start --embedded --rpc-port 26668 --p2p-port 26666
+smithnode-agent start --embedded --rpc-port 26668 --p2p-port 26666
 
 # Agent 3
-moltchain-agent start --embedded --rpc-port 26678 --p2p-port 26676
+smithnode-agent start --embedded --rpc-port 26678 --p2p-port 26676
 ```
 
 ---
@@ -156,13 +154,13 @@ moltchain-agent start --embedded --rpc-port 26678 --p2p-port 26676
 # Dockerfile.node
 FROM rust:1.75 as builder
 WORKDIR /app
-COPY moltchain-node .
+COPY smithnode-node .
 RUN cargo build --release
 
 FROM debian:bookworm-slim
-COPY --from=builder /app/target/release/moltchain /usr/local/bin/
+COPY --from=builder /app/target/release/smithnode /usr/local/bin/
 EXPOSE 26658 26656
-CMD ["moltchain", "start", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0:26656"]
+CMD ["smithnode", "start", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0:26656"]
 ```
 
 ### Agent Container:
@@ -171,9 +169,9 @@ CMD ["moltchain", "start", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0
 # Dockerfile.agent
 FROM node:20-slim
 WORKDIR /app
-COPY moltchain-agent/package*.json ./
+COPY smithnode-agent/package*.json ./
 RUN npm install
-COPY moltchain-agent .
+COPY smithnode-agent .
 CMD ["node", "src/index.js", "start", "--embedded"]
 ```
 
@@ -190,7 +188,7 @@ services:
       - "26658:26658"
       - "26656:26656"
     volumes:
-      - moltchain-data:/root/.moltchain
+      - smithnode-data:/root/.smithnode
 
   agent:
     build:
@@ -202,7 +200,7 @@ services:
       - RPC_URL=http://node:26658
 
 volumes:
-  moltchain-data:
+  smithnode-data:
 ```
 
 ---
@@ -215,28 +213,28 @@ For production scale:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: moltchain-validator
+  name: smithnode-validator
 spec:
-  serviceName: moltchain
+  serviceName: smithnode
   replicas: 3
   selector:
     matchLabels:
-      app: moltchain-validator
+      app: smithnode-validator
   template:
     spec:
       containers:
       - name: node
-        image: your-registry/moltchain-node:latest
+        image: your-registry/smithnode-node:latest
         ports:
         - containerPort: 26658
         - containerPort: 26656
       - name: agent
-        image: your-registry/moltchain-agent:latest
+        image: your-registry/smithnode-agent:latest
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: moltchain-rpc
+  name: smithnode-rpc
 spec:
   type: LoadBalancer
   ports:
@@ -250,19 +248,19 @@ spec:
 
 ### Add Public RPC Endpoints to Web Dashboard:
 
-Edit `moltchain-web/src/utils/rpc.js`:
+Edit `smithnode-web/src/utils/rpc.js`:
 
 ```javascript
 const RPC_ENDPOINTS = [
-  'https://moltchain-rpc.fly.dev',  // Moltchain Devnet
-  'https://rpc1.moltchain.ai',      // Future mainnet
-  'https://rpc2.moltchain.ai',
+  'https://smithnode-rpc.fly.dev',  // SmithNode Devnet
+  'https://rpc1.smithnode.ai',      // Future mainnet
+  'https://rpc2.smithnode.ai',
 ];
 ```
 
 ### Add Bootstrap Peers to Agent:
 
-Edit `moltchain-agent/src/node.js`:
+Edit `smithnode-agent/src/node.js`:
 
 ```javascript
 const BOOTSTRAP_PEERS = [
@@ -280,7 +278,7 @@ const BOOTSTRAP_PEERS = [
 ```bash
 curl https://rpc.yourdomain.com -X POST \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"moltchain_status","params":[],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"smithnode_status","params":[],"id":1}'
 ```
 
 ### Prometheus Metrics (TODO):

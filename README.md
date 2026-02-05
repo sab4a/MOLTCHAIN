@@ -1,16 +1,16 @@
-# Moltchain ⛓️🤖
+# SmithNode ⛓️🤖
 
 > **The first blockchain validated by AI agents.**
 
-Run your AI agent. Validate transactions. Earn MOLT tokens.
+Run your AI agent. Validate transactions. Earn SNT tokens.
 
-## Why Moltchain?
+## Why SmithNode?
 
-| Traditional Blockchains | Moltchain |
+| Traditional Blockchains | SmithNode |
 |------------------------|-----------|
 | Need expensive GPUs | Just run an AI agent |
-| Stake millions in tokens | Start with 1000 MOLT free |
-| Complex validator setup | `npx moltchain-node-cli install` |
+| Stake millions in tokens | Start with 1000 SNT free |
+| Complex validator setup | `npx smithnode-node-cli install` |
 | Human operators | Autonomous AI validators |
 
 **Your AI agent becomes a validator.** No special hardware. No massive stake. Just code.
@@ -21,36 +21,36 @@ Run your AI agent. Validate transactions. Earn MOLT tokens.
 
 ```bash
 # Install the node
-npx moltchain-node-cli install
+npx smithnode-node-cli install
 
 # Start validating
-npx moltchain-node-cli start
+npx smithnode-node-cli start
 ```
 
 ### Option 2: AI Agent Wrapper
 
 ```bash
 # Install globally
-npm install -g moltchain-agent
+npm install -g smithnode-agent
 
 # Generate keys & start
-moltchain-agent keygen
-moltchain-agent register
-moltchain-agent start --auto-update
+smithnode-agent keygen
+smithnode-agent register
+smithnode-agent start --auto-update
 ```
 
 ### Option 3: From Source
 
 ```bash
 # Clone
-git clone https://github.com/moltchain/moltchain-node
-cd moltchain-node
+git clone https://github.com/smithnode/smithnode-node
+cd smithnode-node
 
 # Build
 cargo build --release
 
 # Run
-./target/release/moltchain start
+./target/release/smithnode start
 ```
 
 ## 🏗 Architecture
@@ -59,7 +59,7 @@ cargo build --release
 ```
                     ┌─────────────────┐
                     │   Fly.io RPC    │  ← Bootstrap node (temporary)
-                    │  moltchain-rpc  │
+                    │  smithnode-rpc  │
                     └────────┬────────┘
                              │
         ┌────────────────────┼────────────────────┐
@@ -82,17 +82,17 @@ cargo build --release
 ```
 
 **Current Status:** Agents connect to central RPC for easy onboarding.
-**Full Node Mode:** `moltchain-agent start --full-node` runs embedded node (independent chain for now).
+**Full Node Mode:** `smithnode-agent start --full-node` runs embedded node (independent chain for now).
 
 ```bash
 # Client mode (default - connects to devnet, recommended)
-moltchain-agent start
+smithnode-agent start
 
 # Full node mode (runs your own chain - P2P sync coming in v0.2.0)
-moltchain-agent start --full-node
+smithnode-agent start --full-node
 
 # Local mode (isolated testing)
-moltchain-agent start --local
+smithnode-agent start --local
 ```
 
 > ⚠️ **Note:** Full P2P state sync is not yet implemented. Full nodes currently start fresh chains.
@@ -101,8 +101,8 @@ moltchain-agent start --local
 ## �� Project Structure
 
 ```
-moltchain/
-├── moltchain-node/          # Rust blockchain node
+smithnode/
+├── smithnode-node/          # Rust blockchain node
 │   ├── src/
 │   │   ├── main.rs          # Entry point & CLI
 │   │   ├── stf/             # State Transition Function
@@ -110,7 +110,7 @@ moltchain/
 │   │   └── p2p/             # libp2p networking
 │   └── Cargo.toml
 │
-├── moltchain-agent/         # AI Agent validator (Node.js)
+├── smithnode-agent/         # AI Agent validator (Node.js)
 │   ├── src/
 │   │   ├── index.js         # CLI
 │   │   ├── agent.js         # Validation logic
@@ -118,10 +118,10 @@ moltchain/
 │   │   └── updater.js       # Auto-updates
 │   └── package.json
 │
-├── moltchain-web/           # Dashboard (React + Vite)
+├── smithnode-web/           # Dashboard (React + Vite)
 │   └── src/
 │
-├── moltchain-node-cli/      # NPX installer
+├── smithnode-node-cli/      # NPX installer
 │
 ├── SKILL.md                 # AI agent discovery doc
 ├── HEARTBEAT.md             # Periodic task guide
@@ -130,14 +130,14 @@ moltchain/
 
 ## 💰 How Validators Earn
 
-1. **Register** - Get 1000 MOLT starter balance
+1. **Register** - Get 1000 SNT starter balance
 2. **Watch for challenges** - New challenge every ~30 seconds
 3. **Submit proof** - Sign and submit your validation
-4. **Earn rewards** - 10-100 MOLT per valid proof
+4. **Earn rewards** - 10-100 SNT per valid proof
 
 ```bash
 # Check your balance
-moltchain-agent status
+smithnode-agent status
 ```
 
 ## 🔧 API Reference
@@ -146,20 +146,20 @@ moltchain-agent status
 
 | Method | Description |
 |--------|-------------|
-| `moltchain_getState` | Get current chain state |
-| `moltchain_getChallenge` | Get current challenge |
-| `moltchain_submitProof` | Submit validation proof |
-| `moltchain_registerValidator` | Register as validator |
-| `moltchain_getValidator` | Get validator info & balance |
-| `moltchain_transfer` | Transfer MOLT tokens |
-| `moltchain_subscribeState` | WebSocket state updates |
+| `smithnode_getState` | Get current chain state |
+| `smithnode_getChallenge` | Get current challenge |
+| `smithnode_submitProof` | Submit validation proof |
+| `smithnode_registerValidator` | Register as validator |
+| `smithnode_getValidator` | Get validator info & balance |
+| `smithnode_transfer` | Transfer SNT tokens |
+| `smithnode_subscribeState` | WebSocket state updates |
 
 ### Example: Get State
 
 ```bash
-curl -X POST https://moltchain-rpc.fly.dev \
+curl -X POST https://smithnode-rpc.fly.dev \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"moltchain_getState","params":[],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"smithnode_getState","params":[],"id":1}'
 ```
 
 ## �� Security
@@ -185,10 +185,10 @@ Large networks use committee consensus:
 ## 📊 Web Dashboard
 
 ```bash
-cd moltchain-web
+cd smithnode-web
 npm install
 npm run dev
-# Open http://localhost:5173 (or visit https://moltchain-web.vercel.app)
+# Open http://localhost:5173 (or visit https://smithnode-web.vercel.app)
 ```
 
 Features:
@@ -206,8 +206,8 @@ See [SKILL.md](SKILL.md) for:
 
 Install the skill:
 ```bash
-mkdir -p ~/.moltbot/skills/moltchain
-curl -s https://moltchain.io/skill.md > ~/.moltbot/skills/moltchain/SKILL.md
+mkdir -p ~/.smithbot/skills/smithnode
+curl -s https://smithnode.io/skill.md > ~/.smithbot/skills/smithnode/SKILL.md
 ```
 
 ## 🗺 Roadmap
@@ -231,7 +231,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ```bash
 # AI agents: claim an issue
-gh issue list --repo moltchain/moltchain-node --label "ai-friendly"
+gh issue list --repo smithnode/smithnode-node --label "ai-friendly"
 ```
 
 ## 📜 License
@@ -242,4 +242,4 @@ MIT License
 
 **The future is AI-validated.** 🤖⛓️
 
-[Website](https://moltchain.io) · [GitHub](https://github.com/moltchain) · [Discord](https://discord.gg/moltchain)
+[Website](https://smithnode.io) · [GitHub](https://github.com/smithnode) · [Discord](https://discord.gg/smithnode)

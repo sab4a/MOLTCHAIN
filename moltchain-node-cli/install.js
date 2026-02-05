@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Moltchain Node Installer
+ * SmithNode Node Installer
  * 
- * Usage: npx moltchain-node install
+ * Usage: npx smithnode-node install
  * 
  * This script:
  * 1. Checks for Rust installation
- * 2. Clones/downloads the moltchain-node
+ * 2. Clones/downloads the smithnode-node
  * 3. Builds from source
  * 4. Initializes the node
  * 5. Optionally starts the validator
@@ -28,23 +28,23 @@ const colors = {
   bold: (s) => `\x1b[1m${s}\x1b[0m`,
 };
 
-const MOLTCHAIN_DIR = join(homedir(), '.moltchain');
-const REPO_URL = 'https://github.com/moltchain/moltchain-node.git';
+const SMITHSNT_DIR = join(homedir(), '.smithnode');
+const REPO_URL = 'https://github.com/smithnode/smithnode-node.git';
 
 program
-  .name('moltchain-node')
-  .description('Install and manage Moltchain validator node')
+  .name('smithnode-node')
+  .description('Install and manage SmithNode validator node')
   .version('0.1.0');
 
 program
   .command('install')
-  .description('Install Moltchain node from source')
+  .description('Install SmithNode node from source')
   .option('--no-build', 'Skip building (useful if pre-built binary exists)')
   .action(async (options) => {
     console.log(colors.cyan(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🔗 MOLTCHAIN NODE INSTALLER                                ║
+║   🔗 SMITHSNT SNT INSTALLER                                ║
 ║   AI-Validated Sovereign Rollup                              ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -79,12 +79,12 @@ program
       // Step 2: Create directory
       console.log(colors.blue('\n📁 Setting up directories...\n'));
       
-      if (!existsSync(MOLTCHAIN_DIR)) {
-        mkdirSync(MOLTCHAIN_DIR, { recursive: true });
+      if (!existsSync(SMITHSNT_DIR)) {
+        mkdirSync(SMITHSNT_DIR, { recursive: true });
       }
-      console.log(colors.green(`   ✓ Created ${MOLTCHAIN_DIR}`));
+      console.log(colors.green(`   ✓ Created ${SMITHSNT_DIR}`));
 
-      const sourceDir = join(MOLTCHAIN_DIR, 'source');
+      const sourceDir = join(SMITHSNT_DIR, 'source');
       if (!existsSync(sourceDir)) {
         mkdirSync(sourceDir, { recursive: true });
       }
@@ -93,19 +93,19 @@ program
       console.log(colors.blue('\n📦 Setting up source code...\n'));
       
       // For local dev, we'll create a bootstrap script
-      const bootstrapPath = join(MOLTCHAIN_DIR, 'bootstrap.sh');
+      const bootstrapPath = join(SMITHSNT_DIR, 'bootstrap.sh');
       writeFileSync(bootstrapPath, `#!/bin/bash
-# Moltchain Bootstrap Script
+# SmithNode Bootstrap Script
 set -e
 
 cd ${sourceDir}
 
 # Build the node
-echo "Building Moltchain node..."
+echo "Building SmithNode node..."
 cargo build --release
 
 # Copy binary
-cp target/release/moltchain ${MOLTCHAIN_DIR}/moltchain
+cp target/release/smithnode ${SMITHSNT_DIR}/smithnode
 
 echo "Build complete!"
 `);
@@ -115,12 +115,12 @@ echo "Build complete!"
       // Step 4: Create default config
       console.log(colors.blue('\n⚙️ Creating configuration...\n'));
       
-      const configPath = join(MOLTCHAIN_DIR, 'config.json');
+      const configPath = join(SMITHSNT_DIR, 'config.json');
       const defaultConfig = {
         rpc_port: 26658,
         p2p_port: 26656,
         celestia_rpc: null, // Optional: Celestia DA integration
-        data_dir: join(MOLTCHAIN_DIR, 'data'),
+        data_dir: join(SMITHSNT_DIR, 'data'),
         log_level: 'info',
       };
       writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
@@ -129,7 +129,7 @@ echo "Build complete!"
       // Step 5: Generate keypair
       console.log(colors.blue('\n🔑 Generating validator keypair...\n'));
       
-      const keyPath = join(MOLTCHAIN_DIR, 'validator-key.json');
+      const keyPath = join(SMITHSNT_DIR, 'validator-key.json');
       if (!existsSync(keyPath)) {
         // Generate a simple keypair (in production, use proper ed25519)
         const crypto = await import('crypto');
@@ -155,13 +155,13 @@ echo "Build complete!"
 ║   Next steps:                                                ║
 ║                                                              ║
 ║   1. Build the node:                                         ║
-║      cd ~/.moltchain/source && cargo build --release         ║
+║      cd ~/.smithnode/source && cargo build --release         ║
 ║                                                              ║
 ║   2. Start the node:                                         ║
-║      moltchain start                                         ║
+║      smithnode start                                         ║
 ║                                                              ║
 ║   3. Run the AI agent:                                       ║
-║      cd moltchain-agent && npm start                         ║
+║      cd smithnode-agent && npm start                         ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
       `));
@@ -174,11 +174,11 @@ echo "Build complete!"
 
 program
   .command('init')
-  .description('Initialize a new Moltchain node in current directory')
+  .description('Initialize a new SmithNode node in current directory')
   .action(async () => {
-    console.log(colors.blue('🔧 Initializing Moltchain node...\n'));
+    console.log(colors.blue('🔧 Initializing SmithNode node...\n'));
     
-    const dataDir = join(process.cwd(), '.moltchain');
+    const dataDir = join(process.cwd(), '.smithnode');
     mkdirSync(dataDir, { recursive: true });
     
     const config = {
@@ -193,17 +193,17 @@ program
 
 program
   .command('start')
-  .description('Start the Moltchain node')
+  .description('Start the SmithNode node')
   .option('-p, --rpc-port <port>', 'RPC port', '26658')
   .option('--p2p-port <port>', 'P2P port', '26656')
   .action(async (options) => {
-    console.log(colors.cyan('🚀 Starting Moltchain node...\n'));
+    console.log(colors.cyan('🚀 Starting SmithNode node...\n'));
     
-    const binaryPath = join(MOLTCHAIN_DIR, 'moltchain');
+    const binaryPath = join(SMITHSNT_DIR, 'smithnode');
     
     if (!existsSync(binaryPath)) {
       console.log(colors.yellow('Node binary not found. Building from source...'));
-      console.log(colors.yellow('Please run: cd ~/.moltchain/source && cargo build --release'));
+      console.log(colors.yellow('Please run: cd ~/.smithnode/source && cargo build --release'));
       process.exit(1);
     }
     

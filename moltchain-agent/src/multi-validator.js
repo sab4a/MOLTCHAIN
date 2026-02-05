@@ -16,7 +16,7 @@ ed.etc.sha512Sync = (...m) => {
   return hash.digest();
 };
 
-const RPC_URL = process.env.MOLTCHAIN_RPC || 'https://moltchain-rpc.fly.dev';
+const RPC_URL = process.env.SMITHSNT_RPC || 'https://smithnode-rpc.fly.dev';
 const NUM_VALIDATORS = parseInt(process.env.NUM_VALIDATORS || '20');
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '3000');
 
@@ -73,7 +73,7 @@ class Validator {
 
   async register() {
     try {
-      const result = await rpcCall('moltchain_registerValidator', [{ public_key: this.publicKey }]);
+      const result = await rpcCall('smithnode_registerValidator', [{ public_key: this.publicKey }]);
       if (result.success) {
         this.isRegistered = true;
         this.balance = 100; // Initial balance
@@ -113,7 +113,7 @@ class Validator {
       const privateKeyBytes = hexToBytes(this.privateKey);
       const signature = await ed.signAsync(message, privateKeyBytes);
       
-      const result = await rpcCall('moltchain_submitProof', [{
+      const result = await rpcCall('smithnode_submitProof', [{
         validator_pubkey: this.publicKey,
         challenge_hash: challenge.challenge_hash,
         signature: bytesToHex(signature),
@@ -136,7 +136,7 @@ class Validator {
 
   async refreshBalance() {
     try {
-      const info = await rpcCall('moltchain_getValidator', [this.publicKey]);
+      const info = await rpcCall('smithnode_getValidator', [this.publicKey]);
       if (info) {
         this.balance = info.balance;
         this.validations = info.validations_count;
@@ -148,7 +148,7 @@ class Validator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║       🤖 MOLTCHAIN MULTI-VALIDATOR TEST 🤖                   ║
+║       🤖 SMITHSNT MULTI-VALIDATOR TEST 🤖                   ║
 ║                                                              ║
 ║   Testing ${NUM_VALIDATORS} validators with committee consensus           ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -157,11 +157,11 @@ async function main() {
   console.log(`📡 RPC: ${RPC_URL}\n`);
 
   // Check initial status
-  const initialStatus = await rpcCall('moltchain_status');
+  const initialStatus = await rpcCall('smithnode_status');
   console.log(`📊 Initial Status:`);
   console.log(`   Height: ${initialStatus.height}`);
   console.log(`   Validators: ${initialStatus.validator_count}`);
-  console.log(`   Supply: ${initialStatus.total_supply} MOLT\n`);
+  console.log(`   Supply: ${initialStatus.total_supply} SNT\n`);
 
   // Generate validators
   console.log(`🔑 Generating ${NUM_VALIDATORS} validator keypairs...`);
@@ -191,10 +191,10 @@ async function main() {
   console.log(`💾 Keys saved to ${keysFile}\n`);
 
   // Check status after registration
-  const afterRegStatus = await rpcCall('moltchain_status');
+  const afterRegStatus = await rpcCall('smithnode_status');
   console.log(`📊 After Registration:`);
   console.log(`   Validators: ${afterRegStatus.validator_count}`);
-  console.log(`   Supply: ${afterRegStatus.total_supply} MOLT\n`);
+  console.log(`   Supply: ${afterRegStatus.total_supply} SNT\n`);
 
   // Start validation loop
   console.log(`🚀 Starting validation loop (Ctrl+C to stop)...\n`);
@@ -208,18 +208,18 @@ async function main() {
   while (true) {
     try {
       // First, check if there's an existing challenge
-      let challenge = await rpcCall('moltchain_getChallenge');
+      let challenge = await rpcCall('smithnode_getChallenge');
       
       // Only generate a new challenge if none exists
       if (!challenge) {
         console.log(`\n⏳ No active challenge, generating new one...`);
-        challenge = await rpcCall('moltchain_newChallenge');
+        challenge = await rpcCall('smithnode_newChallenge');
       }
       
       console.log(`\n🎯 Challenge for block ${challenge.height + 1}: ${challenge.challenge_hash.slice(0, 16)}...`);
       
       // Get committee info
-      const committee = await rpcCall('moltchain_getCommittee');
+      const committee = await rpcCall('smithnode_getCommittee');
       if (committee) {
         console.log(`👥 Committee: ${committee.members.length} members, threshold: ${committee.threshold}`);
         const committeeKeys = committee.members.map(m => m.pubkey.slice(0, 8));
@@ -239,7 +239,7 @@ async function main() {
       
       for (const v of shuffled) {
         // Re-check challenge hasn't changed (another validator may have finalized)
-        const currentChallenge = await rpcCall('moltchain_getChallenge');
+        const currentChallenge = await rpcCall('smithnode_getChallenge');
         if (!currentChallenge || currentChallenge.challenge_hash !== workingChallengeHash) {
           console.log(`   🔄 Challenge changed, moving to next block...`);
           blockFinalized = true; // Treat as finalized to break and get new challenge
@@ -252,7 +252,7 @@ async function main() {
           if (result.finalized) {
             blockFinalized = true;
             totalRewards += result.reward;
-            console.log(`   ✅ Validator ${v.index} FINALIZED block! Reward: ${result.reward} MOLT`);
+            console.log(`   ✅ Validator ${v.index} FINALIZED block! Reward: ${result.reward} SNT`);
           } else if (result.reward === 0) {
             console.log(`   ⏳ Validator ${v.index} approved (waiting for threshold)`);
           }
@@ -278,18 +278,18 @@ async function main() {
         blocksProduced++;
         
         // Get updated status
-        const status = await rpcCall('moltchain_status');
+        const status = await rpcCall('smithnode_status');
         console.log(`\n📦 Block ${status.height} finalized!`);
-        console.log(`   Total Supply: ${status.total_supply} MOLT`);
+        console.log(`   Total Supply: ${status.total_supply} SNT`);
         console.log(`   Active Validators: ${status.active_validator_count}`);
         console.log(`   Blocks Produced: ${blocksProduced}`);
         
         // Show top 5 validators by balance
-        const allValidators = await rpcCall('moltchain_getValidators');
+        const allValidators = await rpcCall('smithnode_getValidators');
         const sorted = allValidators.sort((a, b) => b.balance - a.balance).slice(0, 5);
         console.log(`\n🏆 Top 5 Validators:`);
         sorted.forEach((v, i) => {
-          console.log(`   ${i+1}. ${v.public_key.slice(0, 12)}... - ${v.balance} MOLT (${v.validations_count} validations)`);
+          console.log(`   ${i+1}. ${v.public_key.slice(0, 12)}... - ${v.balance} SNT (${v.validations_count} validations)`);
         });
       }
 

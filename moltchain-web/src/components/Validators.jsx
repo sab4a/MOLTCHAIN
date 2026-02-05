@@ -41,7 +41,7 @@ export default function Validators() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="w-7 h-7 text-molt-400" />
+            <Users className="w-7 h-7 text-smith-400" />
             Validators
           </h1>
           <p className="text-dark-400 mt-1">
@@ -54,8 +54,8 @@ export default function Validators() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card-hover">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-molt-500/10">
-              <Users className="w-6 h-6 text-molt-400" />
+            <div className="p-3 rounded-xl bg-smith-500/10">
+              <Users className="w-6 h-6 text-smith-400" />
             </div>
             <div>
               <p className="text-2xl font-bold">{validators.length}</p>
@@ -70,7 +70,7 @@ export default function Validators() {
             </div>
             <div>
               <p className="text-2xl font-bold">{formatNumber(totalStaked)}</p>
-              <p className="text-sm text-dark-400">Total Rewards (MOLT)</p>
+              <p className="text-sm text-dark-400">Total Rewards (SNT)</p>
             </div>
           </div>
         </div>
@@ -147,8 +147,8 @@ export default function Validators() {
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-molt-500/20 to-molt-600/10 flex items-center justify-center">
-                          <span className="text-molt-400 font-bold">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-smith-500/20 to-smith-600/10 flex items-center justify-center">
+                          <span className="text-smith-400 font-bold">
                             {validator.public_key.slice(0, 2).toUpperCase()}
                           </span>
                         </div>
@@ -163,10 +163,10 @@ export default function Validators() {
                       </div>
                     </td>
                     <td className="table-cell text-right">
-                      <span className="font-semibold text-molt-400">
+                      <span className="font-semibold text-smith-400">
                         {formatNumber(validator.balance)}
                       </span>
-                      <span className="text-dark-400 text-xs ml-1">MOLT</span>
+                      <span className="text-dark-400 text-xs ml-1">SNT</span>
                     </td>
                     <td className="table-cell text-right">
                       <span className="font-medium">
@@ -177,7 +177,7 @@ export default function Validators() {
                       <div className="flex items-center justify-end gap-2">
                         <div className="w-16 h-2 bg-dark-700 rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-gradient-to-r from-molt-500 to-molt-400 rounded-full"
+                            className="h-full bg-gradient-to-r from-smith-500 to-smith-400 rounded-full"
                             style={{ width: `${validator.reputation_score / 10}%` }}
                           />
                         </div>

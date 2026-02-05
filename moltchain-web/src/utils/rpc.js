@@ -1,5 +1,5 @@
 /**
- * Moltchain RPC Client with WebSocket Subscription Support
+ * SmithNode RPC Client with WebSocket Subscription Support
  * 
  * Supports multiple RPC endpoints for true P2P resilience.
  * If one node goes down, automatically tries others.
@@ -8,12 +8,12 @@
 // RPC endpoints - Fly.io devnet is the primary network
 const RPC_ENDPOINTS = [
   import.meta.env.VITE_RPC_URL,
-  'https://moltchain-rpc.fly.dev',  // Moltchain Devnet
+  'https://smithnode-rpc.fly.dev',  // SmithNode Devnet
 ].filter(Boolean);
 
 const WS_ENDPOINTS = [
   import.meta.env.VITE_WS_URL,
-  'wss://moltchain-rpc.fly.dev',    // Moltchain Devnet WebSocket
+  'wss://smithnode-rpc.fly.dev',    // SmithNode Devnet WebSocket
 ].filter(Boolean);
 
 // Track which endpoint is currently working
@@ -62,7 +62,7 @@ export async function rpc(method, params = []) {
   }
   
   // All endpoints failed
-  throw new Error('Cannot connect to any Moltchain node. Check if nodes are running or add more RPC endpoints.');
+  throw new Error('Cannot connect to any SmithNode. Check if nodes are running or add more RPC endpoints.');
 }
 
 /**
@@ -96,7 +96,7 @@ class StateSubscription {
         this.ws.send(JSON.stringify({
           jsonrpc: '2.0',
           id: ++rpcId,
-          method: 'moltchain_subscribeState',
+          method: 'smithnode_subscribeState',
           params: [],
         }));
       };
@@ -175,18 +175,18 @@ export const stateSubscription = new StateSubscription();
 
 // API Methods
 export const api = {
-  getStatus: () => rpc('moltchain_status'),
-  getChallenge: () => rpc('moltchain_getChallenge'),
-  newChallenge: () => rpc('moltchain_newChallenge'),
-  getValidators: () => rpc('moltchain_getValidators'),
-  getValidator: (pubkey) => rpc('moltchain_getValidator', [pubkey]),
-  registerValidator: (publicKey) => rpc('moltchain_registerValidator', [{ public_key: publicKey }]),
-  submitProof: (data) => rpc('moltchain_submitProof', [data]),
+  getStatus: () => rpc('smithnode_status'),
+  getChallenge: () => rpc('smithnode_getChallenge'),
+  newChallenge: () => rpc('smithnode_newChallenge'),
+  getValidators: () => rpc('smithnode_getValidators'),
+  getValidator: (pubkey) => rpc('smithnode_getValidator', [pubkey]),
+  registerValidator: (publicKey) => rpc('smithnode_registerValidator', [{ public_key: publicKey }]),
+  submitProof: (data) => rpc('smithnode_submitProof', [data]),
   // Transfer now requires nonce to prevent replay attacks
-  transfer: (from, to, amount, nonce, signature) => rpc('moltchain_transfer', [{ from, to, amount, nonce, signature }]),
-  getTransactions: (page = 1, perPage = 20, txType = null) => rpc('moltchain_getTransactions', [page, perPage, txType]),
-  getBlock: (hash) => rpc('moltchain_getBlock', [hash]),
-  getState: () => rpc('moltchain_getState'),
+  transfer: (from, to, amount, nonce, signature) => rpc('smithnode_transfer', [{ from, to, amount, nonce, signature }]),
+  getTransactions: (page = 1, perPage = 20, txType = null) => rpc('smithnode_getTransactions', [page, perPage, txType]),
+  getBlock: (hash) => rpc('smithnode_getBlock', [hash]),
+  getState: () => rpc('smithnode_getState'),
 };
 
 // Format helpers
@@ -201,9 +201,9 @@ export function formatNumber(num) {
   return new Intl.NumberFormat().format(num);
 }
 
-export function formatMolt(amount) {
-  if (!amount) return '0 MOLT';
-  return `${formatNumber(amount)} MOLT`;
+export function formatSNT(amount) {
+  if (!amount) return '0 SNT';
+  return `${formatNumber(amount)} SNT`;
 }
 
 export function timeAgo(timestamp) {

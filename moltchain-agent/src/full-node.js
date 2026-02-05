@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Moltchain Full Node Agent
+ * SmithNode Full Node Agent
  * 
- * Each agent runs a FULL NODE - no central server required!
+ * Each agent runs a FULL SNT - no central server required!
  * Nodes discover each other via bootstrap peers and sync state.
  * 
  * TRUE P2P: If one node goes down, network continues.
@@ -25,8 +25,8 @@ ed.etc.sha512Sync = (...m) => {
 };
 
 // Bootstrap nodes - these help new nodes find the network
-const BOOTSTRAP_NODES = [
-  '/dns4/moltchain-rpc.fly.dev/tcp/9000',  // Fly.io bootstrap
+const BOOTSTRAP_SNTS = [
+  '/dns4/smithnode-rpc.fly.dev/tcp/9000',  // Fly.io bootstrap
   // Add more bootstrap nodes as network grows
 ];
 
@@ -47,12 +47,12 @@ class FullNodeAgent {
   }
 
   findNodeBinary() {
-    // Look for moltchain-node binary
+    // Look for smithnode-node binary
     const possiblePaths = [
-      path.join(__dirname, '../../moltchain-node/target/release/moltchain'),
-      path.join(__dirname, '../../moltchain-node/target/debug/moltchain'),
-      '/usr/local/bin/moltchain',
-      'moltchain',
+      path.join(__dirname, '../../smithnode-node/target/release/smithnode'),
+      path.join(__dirname, '../../smithnode-node/target/debug/smithnode'),
+      '/usr/local/bin/smithnode',
+      'smithnode',
     ];
 
     for (const p of possiblePaths) {
@@ -88,7 +88,7 @@ class FullNodeAgent {
   }
 
   async startNode() {
-    console.log(`\n🚀 Starting Moltchain full node...`);
+    console.log(`\n🚀 Starting SmithNode full node...`);
     console.log(`   Binary: ${this.nodeBinary}`);
     console.log(`   P2P Port: ${this.p2pPort}`);
     console.log(`   RPC Port: ${this.rpcPort}`);
@@ -102,7 +102,7 @@ class FullNodeAgent {
     ];
 
     // Add bootstrap peers
-    for (const peer of BOOTSTRAP_NODES) {
+    for (const peer of BOOTSTRAP_SNTS) {
       args.push('--peer', peer);
     }
 
@@ -115,14 +115,14 @@ class FullNodeAgent {
     this.nodeProcess.stdout.on('data', (data) => {
       const lines = data.toString().split('\n').filter(l => l.trim());
       for (const line of lines) {
-        console.log(`[NODE] ${line}`);
+        console.log(`[SNT] ${line}`);
       }
     });
 
     this.nodeProcess.stderr.on('data', (data) => {
       const lines = data.toString().split('\n').filter(l => l.trim());
       for (const line of lines) {
-        console.log(`[NODE ERR] ${line}`);
+        console.log(`[SNT ERR] ${line}`);
       }
     });
 
@@ -156,7 +156,7 @@ class FullNodeAgent {
 
   async registerAsValidator() {
     try {
-      const result = await this.rpcCall('moltchain_registerValidator', [{ 
+      const result = await this.rpcCall('smithnode_registerValidator', [{ 
         public_key: this.publicKey 
       }]);
       if (result.success) {
@@ -177,7 +177,7 @@ class FullNodeAgent {
     while (true) {
       try {
         // Get current challenge
-        const challenge = await this.rpcCall('moltchain_newChallenge');
+        const challenge = await this.rpcCall('smithnode_newChallenge');
         
         // Create and submit proof
         const verdictDigest = crypto.createHash('sha256').update('valid').digest();
@@ -187,7 +187,7 @@ class FullNodeAgent {
         const privateKeyBytes = Buffer.from(this.privateKey, 'hex');
         const signature = await ed.signAsync(message, privateKeyBytes);
         
-        const result = await this.rpcCall('moltchain_submitProof', [{
+        const result = await this.rpcCall('smithnode_submitProof', [{
           validator_pubkey: this.publicKey,
           challenge_hash: challenge.challenge_hash,
           signature: bytesToHex(signature),
@@ -195,7 +195,7 @@ class FullNodeAgent {
         }]);
         
         if (result.success && result.reward > 0) {
-          console.log(`🎉 Block finalized! Reward: ${result.reward} MOLT`);
+          console.log(`🎉 Block finalized! Reward: ${result.reward} SNT`);
         }
         
       } catch (e) {
@@ -209,7 +209,7 @@ class FullNodeAgent {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 MOLTCHAIN FULL NODE AGENT 🌐                          ║
+║     🌐 SMITHSNT FULL SNT AGENT 🌐                          ║
 ║                                                              ║
 ║   TRUE P2P: Each agent IS a full node!                       ║
 ║   No central server - network survives if any node dies      ║

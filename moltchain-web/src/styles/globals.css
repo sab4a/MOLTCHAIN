@@ -39,7 +39,7 @@
   }
   
   .card-hover {
-    @apply card transition-all duration-300 hover:border-molt-500/30 hover:shadow-lg hover:shadow-molt-500/5;
+    @apply card transition-all duration-300 hover:border-smith-500/30 hover:shadow-lg hover:shadow-smith-500/5;
   }
 
   .btn {
@@ -47,7 +47,7 @@
   }
 
   .btn-primary {
-    @apply btn bg-gradient-to-r from-molt-500 to-molt-600 text-white hover:from-molt-400 hover:to-molt-500 shadow-lg shadow-molt-500/25;
+    @apply btn bg-gradient-to-r from-smith-500 to-smith-600 text-white hover:from-smith-400 hover:to-smith-500 shadow-lg shadow-smith-500/25;
   }
 
   .btn-secondary {
@@ -59,7 +59,7 @@
   }
 
   .input {
-    @apply w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-400 focus:outline-none focus:border-molt-500 focus:ring-1 focus:ring-molt-500 transition-all;
+    @apply w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-400 focus:outline-none focus:border-smith-500 focus:ring-1 focus:ring-smith-500 transition-all;
   }
 
   .stat-card {
@@ -116,7 +116,7 @@
 
   .glow-box::before {
     content: '';
-    @apply absolute -inset-0.5 bg-gradient-to-r from-molt-500 to-molt-600 rounded-2xl opacity-0 blur transition-opacity duration-300;
+    @apply absolute -inset-0.5 bg-gradient-to-r from-smith-500 to-smith-600 rounded-2xl opacity-0 blur transition-opacity duration-300;
   }
 
   .glow-box:hover::before {

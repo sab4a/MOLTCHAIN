@@ -15,7 +15,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useNetworkStore } from '../hooks/useStore';
-import { formatNumber, formatMolt, formatAddress } from '../utils/rpc';
+import { formatNumber, formatSNT, formatAddress } from '../utils/rpc';
 
 export default function Dashboard() {
   const { status, validators, challenge, connected, subscribed, refreshAll, lastUpdated } = useNetworkStore();
@@ -54,14 +54,14 @@ export default function Dashboard() {
     },
     {
       label: 'Total Supply',
-      value: formatMolt(status?.total_supply || 0),
+      value: formatSNT(status?.total_supply || 0),
       icon: Coins,
-      color: 'text-molt-400',
-      bgColor: 'bg-molt-500/10',
+      color: 'text-smith-400',
+      bgColor: 'bg-smith-500/10',
     },
     {
       label: 'Reward per Block',
-      value: '100 MOLT',
+      value: '100 SNT',
       icon: Trophy,
       color: 'text-yellow-400',
       bgColor: 'bg-yellow-500/10',
@@ -71,20 +71,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       {/* AI Agent Discovery Banner */}
-      <div className="card bg-gradient-to-r from-molt-500/10 to-blue-500/10 border-molt-500/30">
+      <div className="card bg-gradient-to-r from-smith-500/10 to-blue-500/10 border-smith-500/30">
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl bg-molt-500/20">
-            <Bot className="w-8 h-8 text-molt-400 animate-pulse" />
+          <div className="p-3 rounded-xl bg-smith-500/20">
+            <Bot className="w-8 h-8 text-smith-400 animate-pulse" />
           </div>
           <div className="flex-1 space-y-2">
             <h3 className="text-lg font-bold text-green-400">🟢 Discovering AI Agents on the Network...</h3>
             <p className="text-dark-300">
-              Moltchain is scanning for active AI agents. Want to join as a validator?
+              SmithNode is scanning for active AI agents. Want to join as a validator?
             </p>
             <div className="bg-dark-900/50 rounded-lg p-4 mt-3 font-mono text-sm">
-              <p className="text-dark-400 mb-2"># Become an AI agent and earn MOLT:</p>
-              <p className="text-green-400">npm install -g moltchain-agent</p>
-              <p className="text-green-400">moltchain-agent start --moltbook</p>
+              <p className="text-dark-400 mb-2"># Become an AI agent and earn SNT:</p>
+              <p className="text-green-400">npm install -g smithnode-agent</p>
             </div>
             <p className="text-dark-400 text-sm mt-2">
               🤖 Each AI agent IS the network - true P2P, no central server!
@@ -94,13 +93,13 @@ export default function Dashboard() {
       </div>
 
       {/* Hero Section */}
-      <div className="card bg-gradient-to-br from-dark-900 via-dark-900 to-molt-950/20 border-molt-500/20">
+      <div className="card bg-gradient-to-br from-dark-900 via-dark-900 to-smith-950/20 border-smith-500/20">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="badge badge-success">🟢 Network Active</span>
               {challenge && (
-                <span className="badge bg-molt-500/20 text-molt-400">
+                <span className="badge bg-smith-500/20 text-smith-400">
                   🎯 Challenge Active
                 </span>
               )}
@@ -118,8 +117,8 @@ export default function Dashboard() {
             </div>
             <h1 className="text-4xl font-bold">
               Welcome to{' '}
-              <span className="bg-gradient-to-r from-molt-400 to-molt-600 bg-clip-text text-transparent">
-                Moltchain
+              <span className="bg-gradient-to-r from-smith-400 to-smith-600 bg-clip-text text-transparent">
+                SmithNode
               </span>
             </h1>
             <p className="text-dark-300 max-w-xl">
@@ -138,8 +137,8 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="hidden lg:block">
-            <div className="w-48 h-48 rounded-2xl bg-gradient-to-br from-molt-500/20 to-molt-600/5 flex items-center justify-center animate-pulse-slow">
-              <Bot className="w-24 h-24 text-molt-400" />
+            <div className="w-48 h-48 rounded-2xl bg-gradient-to-br from-smith-500/20 to-smith-600/5 flex items-center justify-center animate-pulse-slow">
+              <Bot className="w-24 h-24 text-smith-400" />
             </div>
           </div>
         </div>
@@ -170,11 +169,11 @@ export default function Dashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Activity className="w-5 h-5 text-molt-400" />
+              <Activity className="w-5 h-5 text-smith-400" />
               Current Challenge
             </h2>
             {challenge && (
-              <span className="badge bg-molt-500/20 text-molt-400">
+              <span className="badge bg-smith-500/20 text-smith-400">
                 <Clock className="w-3 h-3 mr-1" />
                 {challenge.remaining_seconds}s left
               </span>
@@ -228,7 +227,7 @@ export default function Dashboard() {
               <Trophy className="w-5 h-5 text-yellow-400" />
               Top Validators
             </h2>
-            <Link to="/validators" className="text-sm text-molt-400 hover:text-molt-300 flex items-center gap-1">
+            <Link to="/validators" className="text-sm text-smith-400 hover:text-smith-300 flex items-center gap-1">
               View All <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -260,10 +259,10 @@ export default function Dashboard() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-molt-400">
+                      <p className="font-semibold text-smith-400">
                         {formatNumber(validator.balance)}
                       </p>
-                      <p className="text-xs text-dark-400">MOLT</p>
+                      <p className="text-xs text-dark-400">SNT</p>
                     </div>
                   </div>
                 ))}
@@ -274,7 +273,7 @@ export default function Dashboard() {
                 <Users className="w-8 h-8 text-dark-500" />
               </div>
               <p className="text-dark-400">No validators yet</p>
-              <Link to="/wallet" className="text-molt-400 text-sm mt-2 inline-block hover:underline">
+              <Link to="/wallet" className="text-smith-400 text-sm mt-2 inline-block hover:underline">
                 Become the first validator →
               </Link>
             </div>
@@ -298,7 +297,7 @@ export default function Dashboard() {
           <div className="p-4 rounded-xl bg-dark-800/50 border border-dark-700">
             <p className="text-xs text-dark-400 mb-1">RPC Endpoint</p>
             <p className="font-mono text-xs text-dark-300">
-              https://moltchain-rpc.fly.dev
+              https://smithnode-rpc.fly.dev
             </p>
           </div>
         </div>

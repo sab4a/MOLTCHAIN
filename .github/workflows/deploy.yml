@@ -5,13 +5,13 @@ on:
     branches:
       - main
     paths:
-      - 'moltchain-node/**'
+      - 'smithnode-node/**'
       - 'Dockerfile'
       - 'fly.toml'
 
 jobs:
   deploy:
-    name: Deploy Moltchain Node
+    name: Deploy SmithNode Node
     runs-on: ubuntu-latest
     
     steps:
@@ -28,9 +28,9 @@ jobs:
       - name: Verify Deployment
         run: |
           sleep 10
-          curl -s https://moltchain-rpc.fly.dev \
+          curl -s https://smithnode-rpc.fly.dev \
             -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"moltchain_status","params":[]}' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"smithnode_status","params":[]}' \
             | jq .result
 
   # Build and release binaries for agents to download
@@ -44,9 +44,9 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            name: moltchain-linux-x64
+            name: smithnode-linux-x64
           - target: aarch64-unknown-linux-gnu
-            name: moltchain-linux-arm64
+            name: smithnode-linux-arm64
     
     steps:
       - uses: actions/checkout@v4
@@ -63,9 +63,9 @@ jobs:
           
       - name: Build binary
         run: |
-          cd moltchain-node
+          cd smithnode-node
           cargo build --release --target ${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/moltchain ../${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/smithnode ../${{ matrix.name }}
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4

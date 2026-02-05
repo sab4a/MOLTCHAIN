@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Moltchain Stress Test & Security Validation
+ * SmithNode Stress Test & Security Validation
  * 
  * Tests:
  * 1. Spawn 50 validators
@@ -90,7 +90,7 @@ function recordTest(name, passed, details = '') {
 async function testNodeConnection() {
   log(colors.cyan, '\n📡 Testing Node Connection...');
   try {
-    const status = await rpc('moltchain_status');
+    const status = await rpc('smithnode_status');
     recordTest('Node is reachable', true);
     recordTest('Has valid height', status.height >= 0);
     recordTest('Has state root', !!status.state_root);
@@ -113,7 +113,7 @@ async function testValidatorRegistration() {
     validators.push(keypair);
     
     try {
-      const result = await rpc('moltchain_registerValidator', [{ public_key: keypair.publicKey }]);
+      const result = await rpc('smithnode_registerValidator', [{ public_key: keypair.publicKey }]);
       if (i % 10 === 0) {
         log(colors.blue, `    Registered ${i + 1}/${NUM_VALIDATORS} validators...`);
       }
@@ -127,7 +127,7 @@ async function testValidatorRegistration() {
   recordTest('Registration throughput', elapsed < 30000, `${(NUM_VALIDATORS / (elapsed / 1000)).toFixed(1)} validators/sec`);
   
   // Verify validators exist
-  const allValidators = await rpc('moltchain_getValidators');
+  const allValidators = await rpc('smithnode_getValidators');
   recordTest('Validators in state', allValidators && allValidators.length >= NUM_VALIDATORS, 
     `${allValidators?.length || 0} total validators`);
   
@@ -138,10 +138,10 @@ async function testConcurrentProofs(validators) {
   log(colors.cyan, '\n⚡ Testing Concurrent Proof Submission...');
   
   // Request a fresh challenge
-  await rpc('moltchain_newChallenge');
+  await rpc('smithnode_newChallenge');
   
   // Get current challenge
-  let challenge = await rpc('moltchain_getChallenge');
+  let challenge = await rpc('smithnode_getChallenge');
   
   if (!challenge) {
     recordTest('Challenge available', false, 'No challenge could be created');
@@ -164,7 +164,7 @@ async function testConcurrentProofs(validators) {
       const message = Buffer.from(challengeHash + verdictDigest, 'hex');
       const signature = await sign(message, v.privateKey);
       
-      const result = await rpc('moltchain_submitProof', [{
+      const result = await rpc('smithnode_submitProof', [{
         validator_pubkey: v.publicKey,
         challenge_hash: challengeHash,
         signature: signature,
@@ -194,17 +194,17 @@ async function testConcurrentProofs(validators) {
 async function testTransfers(validators) {
   log(colors.cyan, '\n💸 Testing Token Transfers...');
   
-  // New validators should now have 100 MOLT initial balance
+  // New validators should now have 100 SNT initial balance
   const sender = validators[0];
   const recipient = validators[1];
   
-  const senderInfo = await rpc('moltchain_getValidator', [sender.publicKey]);
+  const senderInfo = await rpc('smithnode_getValidator', [sender.publicKey]);
   const initialBalance = senderInfo?.balance || 0;
   
-  recordTest('New validator funded with 100 MOLT', initialBalance === 100, `Balance: ${initialBalance}`);
+  recordTest('New validator funded with 100 SNT', initialBalance === 100, `Balance: ${initialBalance}`);
   
   if (initialBalance < 50) {
-    recordTest('Sender has enough balance', false, `Only ${initialBalance} MOLT`);
+    recordTest('Sender has enough balance', false, `Only ${initialBalance} SNT`);
     return;
   }
   
@@ -222,7 +222,7 @@ async function testTransfers(validators) {
   const signature = await sign(message, sender.privateKey);
   
   try {
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: sender.publicKey,
       to: recipient.publicKey,
       amount: amount,
@@ -233,8 +233,8 @@ async function testTransfers(validators) {
     recordTest('Transfer returns tx_hash', !!result.tx_hash);
     
     // Verify balances changed
-    const newSenderInfo = await rpc('moltchain_getValidator', [sender.publicKey]);
-    const newRecipientInfo = await rpc('moltchain_getValidator', [recipient.publicKey]);
+    const newSenderInfo = await rpc('smithnode_getValidator', [sender.publicKey]);
+    const newRecipientInfo = await rpc('smithnode_getValidator', [recipient.publicKey]);
     
     recordTest('Sender balance decreased', newSenderInfo.balance === initialBalance - amount, 
       `${initialBalance} → ${newSenderInfo.balance}`);
@@ -255,7 +255,7 @@ async function testMaliciousTransactions(validators) {
   // Test 1: Invalid signature
   log(colors.yellow, '  Testing invalid signatures...');
   try {
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: attacker.publicKey,
       to: victim.publicKey,
       amount: 100,
@@ -276,7 +276,7 @@ async function testMaliciousTransactions(validators) {
     ]);
     const wrongSignature = await sign(wrongMessage, attacker.privateKey); // Signed by ATTACKER
     
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: victim.publicKey,
       to: attacker.publicKey,
       amount: 1000,
@@ -297,7 +297,7 @@ async function testMaliciousTransactions(validators) {
     ]);
     const signature = await sign(message, attacker.privateKey);
     
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: attacker.publicKey,
       to: victim.publicKey,
       amount: 999999999999,
@@ -311,7 +311,7 @@ async function testMaliciousTransactions(validators) {
   // Test 4: Double registration
   log(colors.yellow, '  Testing double registration...');
   try {
-    const result = await rpc('moltchain_registerValidator', [{ public_key: attacker.publicKey }]);
+    const result = await rpc('smithnode_registerValidator', [{ public_key: attacker.publicKey }]);
     recordTest('Handle double registration', result.success === false || result.error?.includes('already'), 
       result.error || 'Handled gracefully');
   } catch (e) {
@@ -321,7 +321,7 @@ async function testMaliciousTransactions(validators) {
   // Test 5: Invalid public key format
   log(colors.yellow, '  Testing invalid key formats...');
   try {
-    const result = await rpc('moltchain_registerValidator', [{ public_key: 'not-a-valid-hex-key' }]);
+    const result = await rpc('smithnode_registerValidator', [{ public_key: 'not-a-valid-hex-key' }]);
     recordTest('Reject invalid pubkey format', result.success === false, result.error);
   } catch (e) {
     recordTest('Reject invalid pubkey format', true, 'Rejected');
@@ -329,7 +329,7 @@ async function testMaliciousTransactions(validators) {
   
   // Test 6: Zero-length key
   try {
-    const result = await rpc('moltchain_registerValidator', [{ public_key: '' }]);
+    const result = await rpc('smithnode_registerValidator', [{ public_key: '' }]);
     recordTest('Reject empty pubkey', result.success === false, result.error);
   } catch (e) {
     recordTest('Reject empty pubkey', true, 'Rejected');
@@ -337,7 +337,7 @@ async function testMaliciousTransactions(validators) {
   
   // Test 7: Wrong length key
   try {
-    const result = await rpc('moltchain_registerValidator', [{ public_key: 'ab'.repeat(16) }]); // 16 bytes instead of 32
+    const result = await rpc('smithnode_registerValidator', [{ public_key: 'ab'.repeat(16) }]); // 16 bytes instead of 32
     recordTest('Reject wrong-length pubkey', result.success === false, result.error);
   } catch (e) {
     recordTest('Reject wrong-length pubkey', true, 'Rejected');
@@ -347,8 +347,8 @@ async function testMaliciousTransactions(validators) {
   log(colors.yellow, '  Testing replay attack...');
   try {
     // Request a fresh challenge for this test
-    await rpc('moltchain_newChallenge');
-    let challenge = await rpc('moltchain_getChallenge');
+    await rpc('smithnode_newChallenge');
+    let challenge = await rpc('smithnode_getChallenge');
     
     if (challenge) {
       const challengeHash = challenge.challenge_hash;
@@ -358,7 +358,7 @@ async function testMaliciousTransactions(validators) {
       
       // First submission
       try {
-        await rpc('moltchain_submitProof', [{
+        await rpc('smithnode_submitProof', [{
           validator_pubkey: attacker.publicKey,
           challenge_hash: challengeHash,
           signature: signature,
@@ -370,7 +370,7 @@ async function testMaliciousTransactions(validators) {
       
       // Second submission (replay) - should fail
       try {
-        const result = await rpc('moltchain_submitProof', [{
+        const result = await rpc('smithnode_submitProof', [{
           validator_pubkey: attacker.publicKey,
           challenge_hash: challengeHash,
           signature: signature,
@@ -397,7 +397,7 @@ async function testMaliciousTransactions(validators) {
     ]);
     const signature = await sign(message, attacker.privateKey);
     
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: attacker.publicKey,
       to: victim.publicKey,
       amount: -100,
@@ -418,7 +418,7 @@ async function testMaliciousTransactions(validators) {
     ]);
     const signature = await sign(message, attacker.privateKey);
     
-    const result = await rpc('moltchain_transfer', [{
+    const result = await rpc('smithnode_transfer', [{
       from: attacker.publicKey,
       to: attacker.publicKey,
       amount: 10,
@@ -439,7 +439,7 @@ async function testScalability() {
   const queryCount = 100;
   
   for (let i = 0; i < queryCount; i++) {
-    await rpc('moltchain_getState');
+    await rpc('smithnode_getState');
   }
   
   const queryElapsed = Date.now() - queryStart;
@@ -448,13 +448,13 @@ async function testScalability() {
   
   // Test 2: Get all validators
   const validatorsStart = Date.now();
-  const validators = await rpc('moltchain_getValidators');
+  const validators = await rpc('smithnode_getValidators');
   const validatorsElapsed = Date.now() - validatorsStart;
   recordTest('Get all validators', validatorsElapsed < 1000, `${validators?.length || 0} validators in ${validatorsElapsed}ms`);
   
   // Test 3: Transaction pagination
   const txStart = Date.now();
-  const txs = await rpc('moltchain_getTransactions', [1, 100, null]);
+  const txs = await rpc('smithnode_getTransactions', [1, 100, null]);
   const txElapsed = Date.now() - txStart;
   recordTest('Transaction pagination', txElapsed < 1000, `${txs?.transactions?.length || 0} txs in ${txElapsed}ms`);
   
@@ -464,7 +464,7 @@ async function testScalability() {
   const concurrentCount = 50;
   
   const concurrentPromises = Array(concurrentCount).fill(null).map(() => 
-    rpc('moltchain_getState')
+    rpc('smithnode_getState')
   );
   
   await Promise.all(concurrentPromises);
@@ -477,7 +477,7 @@ async function testCommitteeConsensus(validators) {
   log(colors.cyan, '\n🏛️ Testing Committee Consensus...');
   
   // Get current committee
-  const committee = await rpc('moltchain_getCommittee');
+  const committee = await rpc('smithnode_getCommittee');
   
   if (committee) {
     recordTest('Committee exists', true, `${committee.members?.length || 0} members`);
@@ -507,7 +507,7 @@ async function testWebSocketSubscription() {
         // Subscribe to state
         ws.send(JSON.stringify({
           jsonrpc: '2.0',
-          method: 'moltchain_subscribeState',
+          method: 'smithnode_subscribeState',
           params: [],
           id: 1,
         }));
@@ -541,9 +541,9 @@ async function testDataIntegrity() {
   
   // Get state multiple times, should be consistent
   const states = await Promise.all([
-    rpc('moltchain_status'),
-    rpc('moltchain_status'),
-    rpc('moltchain_status'),
+    rpc('smithnode_status'),
+    rpc('smithnode_status'),
+    rpc('smithnode_status'),
   ]);
   
   const heights = states.map(s => s.height);
@@ -553,7 +553,7 @@ async function testDataIntegrity() {
   
   // Verify total supply makes sense
   const state = states[0];
-  recordTest('Total supply positive', state.total_supply > 0, `${state.total_supply} MOLT`);
+  recordTest('Total supply positive', state.total_supply > 0, `${state.total_supply} SNT`);
   
   // Verify validators count
   recordTest('Validators count valid', state.validator_count >= 0, `${state.validator_count} validators`);
@@ -566,7 +566,7 @@ async function testDataIntegrity() {
 async function main() {
   console.log(colors.magenta + `
 ╔══════════════════════════════════════════════════════════════╗
-║          🦞 MOLTCHAIN STRESS TEST & SECURITY AUDIT 🦞         ║
+║          🦞 SMITHSNT STRESS TEST & SECURITY AUDIT 🦞         ║
 ║                                                              ║
 ║  Testing: Registration, Proofs, Transfers, Security, Scale  ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -579,7 +579,7 @@ async function main() {
   // Run all tests
   const connected = await testNodeConnection();
   if (!connected) {
-    log(colors.red, '\n❌ Cannot connect to node. Make sure moltchain is running!');
+    log(colors.red, '\n❌ Cannot connect to node. Make sure smithnode is running!');
     process.exit(1);
   }
   

@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        molt: {
+        smith: {
           50: '#fef3f2',
           100: '#fee4e2',
           200: '#ffcdc9',

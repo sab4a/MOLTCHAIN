@@ -1,4 +1,4 @@
-//! Fraud Proof System for Moltchain
+//! Fraud Proof System for SmithNode
 //!
 //! Allows validators to challenge and dispute invalid blocks or proofs.
 //! This creates an economic game where cheating is unprofitable.

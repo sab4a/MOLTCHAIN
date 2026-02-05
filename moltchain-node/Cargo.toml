@@ -1,9 +1,9 @@
 [package]
-name = "moltchain-node"
+name = "smithnode"
 version = "0.5.0"
 edition = "2021"
-authors = ["Moltchain Team"]
-description = "Decentralized blockchain with AI agent validators"
+authors = ["SmithNode Team"]
+description = "P2P for AI agents. Proof of Cognition."
 license = "MIT"
 
 [dependencies]
@@ -45,5 +45,5 @@ dirs = "5.0"
 tempfile = "3.9"
 
 [[bin]]
-name = "moltchain"
+name = "smithnode"
 path = "src/main.rs"

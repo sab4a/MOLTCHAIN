@@ -19,8 +19,8 @@ ed.etc.sha512Sync = (...m) => {
   return hash.digest();
 };
 
-const DEVNET_RPC = 'https://moltchain-rpc.fly.dev';
-const NUM_NODES = parseInt(process.env.NUM_NODES || '20');
+const DEVNET_RPC = 'https://smithnode-rpc.fly.dev';
+const NUM_SNTS = parseInt(process.env.NUM_SNTS || '20');
 const BASE_RPC_PORT = 27000;
 const BASE_P2P_PORT = 28000;
 
@@ -53,7 +53,7 @@ class FullNodeValidator {
     this.index = index;
     this.rpcPort = BASE_RPC_PORT + index;
     this.p2pPort = BASE_P2P_PORT + index;
-    this.dataDir = `/tmp/moltchain-node-${index}`;
+    this.dataDir = `/tmp/smithnode-node-${index}`;
     this.keyFile = `${this.dataDir}/validator-key.json`;
     this.process = null;
     this.keypair = null;
@@ -73,7 +73,7 @@ class FullNodeValidator {
   }
 
   async start(devnetState) {
-    const binaryPath = `${process.env.HOME}/.moltchain/bin/moltchain`;
+    const binaryPath = `${process.env.HOME}/.smithnode/bin/smithnode`;
     
     // Start the node
     this.process = spawn(binaryPath, [
@@ -98,7 +98,7 @@ class FullNodeValidator {
     // Import devnet state
     if (devnetState) {
       try {
-        await rpcCall(`http://127.0.0.1:${this.rpcPort}`, 'moltchain_importState', [devnetState]);
+        await rpcCall(`http://127.0.0.1:${this.rpcPort}`, 'smithnode_importState', [devnetState]);
       } catch (e) {
         // May fail if already at same height
       }
@@ -106,7 +106,7 @@ class FullNodeValidator {
 
     // Register as validator on DEVNET (not local)
     try {
-      await rpcCall(DEVNET_RPC, 'moltchain_registerValidator', [{ 
+      await rpcCall(DEVNET_RPC, 'smithnode_registerValidator', [{ 
         public_key: this.keypair.publicKey 
       }]);
       console.log(`   ✅ Node ${this.index} registered on devnet`);
@@ -116,7 +116,7 @@ class FullNodeValidator {
 
     // Send heartbeat to become ACTIVE
     try {
-      await rpcCall(DEVNET_RPC, 'moltchain_presence', [{ 
+      await rpcCall(DEVNET_RPC, 'smithnode_presence', [{ 
         validator_pubkey: this.keypair.publicKey 
       }]);
     } catch (e) {
@@ -129,11 +129,11 @@ class FullNodeValidator {
   async validate() {
     try {
       // Get challenge from DEVNET (source of truth for new blocks)
-      let challenge = await rpcCall(DEVNET_RPC, 'moltchain_getChallenge', []);
+      let challenge = await rpcCall(DEVNET_RPC, 'smithnode_getChallenge', []);
       
       // If no challenge OR challenge is expired, request new one
       if (!challenge || challenge.remaining_seconds <= 0) {
-        challenge = await rpcCall(DEVNET_RPC, 'moltchain_newChallenge', []);
+        challenge = await rpcCall(DEVNET_RPC, 'smithnode_newChallenge', []);
         if (this.index === 1) console.log(`   Node 1: Got new challenge ${challenge?.challenge_hash?.slice(0,8)}, expires in ${challenge?.remaining_seconds}s`);
       }
       
@@ -161,7 +161,7 @@ class FullNodeValidator {
       const signature = await ed.signAsync(message, privateKeyBytes);
 
       // Submit proof to DEVNET (where consensus happens)
-      const result = await rpcCall(DEVNET_RPC, 'moltchain_submitProof', [{
+      const result = await rpcCall(DEVNET_RPC, 'smithnode_submitProof', [{
         validator_pubkey: this.keypair.publicKey,
         challenge_hash: challenge.challenge_hash,
         signature: bytesToHex(signature),
@@ -187,7 +187,7 @@ class FullNodeValidator {
 
   async getStatus() {
     try {
-      return await rpcCall(`http://127.0.0.1:${this.rpcPort}`, 'moltchain_status', []);
+      return await rpcCall(`http://127.0.0.1:${this.rpcPort}`, 'smithnode_status', []);
     } catch (e) {
       return null;
     }
@@ -203,33 +203,33 @@ class FullNodeValidator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 MOLTCHAIN MULTI FULL-NODE TEST 🌐                     ║
+║     🌐 SMITHSNT MULTI FULL-SNT TEST 🌐                     ║
 ║                                                              ║
-║   ${NUM_NODES} independent P2P nodes, each synced from devnet        ║
+║   ${NUM_SNTS} independent P2P nodes, each synced from devnet        ║
 ║   True decentralization - network survives if devnet dies!  ║
 ╚══════════════════════════════════════════════════════════════╝
 `);
 
   // Fetch devnet state first
   console.log('📥 Fetching state from devnet...');
-  const devnetStatus = await rpcCall(DEVNET_RPC, 'moltchain_status', []);
+  const devnetStatus = await rpcCall(DEVNET_RPC, 'smithnode_status', []);
   console.log(`   Height: ${devnetStatus.height}`);
   console.log(`   Validators: ${devnetStatus.validator_count}`);
   console.log(`   Version: ${devnetStatus.node_version}\n`);
 
-  const devnetState = await rpcCall(DEVNET_RPC, 'moltchain_exportState', []);
+  const devnetState = await rpcCall(DEVNET_RPC, 'smithnode_exportState', []);
   console.log(`   ✅ State snapshot: ${devnetState.validators.length} validators\n`);
 
   // Create nodes
-  console.log(`🔧 Setting up ${NUM_NODES} full nodes...`);
-  for (let i = 0; i < NUM_NODES; i++) {
+  console.log(`🔧 Setting up ${NUM_SNTS} full nodes...`);
+  for (let i = 0; i < NUM_SNTS; i++) {
     const node = new FullNodeValidator(i + 1);
     await node.setup();
     nodes.push(node);
   }
 
   // Start all nodes
-  console.log(`\n🚀 Starting ${NUM_NODES} nodes (syncing from devnet)...`);
+  console.log(`\n🚀 Starting ${NUM_SNTS} nodes (syncing from devnet)...`);
   let started = 0;
   for (const node of nodes) {
     if (await node.start(devnetState)) {
@@ -238,7 +238,7 @@ async function main() {
     // Small delay between starts
     await new Promise(r => setTimeout(r, 500));
   }
-  console.log(`   ✅ ${started}/${NUM_NODES} nodes started\n`);
+  console.log(`   ✅ ${started}/${NUM_SNTS} nodes started\n`);
 
   // Wait for all nodes to be ready
   await new Promise(r => setTimeout(r, 2000));
@@ -246,7 +246,7 @@ async function main() {
   // Send heartbeats to mark all nodes as active BEFORE validation starts
   console.log('💓 Sending heartbeats to become active...');
   await Promise.all(nodes.map(n => 
-    rpcCall(DEVNET_RPC, 'moltchain_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
+    rpcCall(DEVNET_RPC, 'smithnode_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
   ));
   await new Promise(r => setTimeout(r, 1000));
 
@@ -260,7 +260,7 @@ async function main() {
   }
 
   // Validation loop
-  console.log(`\n🎯 Starting validation (all ${NUM_NODES} nodes competing)...`);
+  console.log(`\n🎯 Starting validation (all ${NUM_SNTS} nodes competing)...`);
   console.log(`   Press Ctrl+C to stop\n`);
   
   startTime = Date.now();
@@ -272,7 +272,7 @@ async function main() {
     // Send heartbeats every 10 seconds to stay active
     if (Date.now() - lastHeartbeat > 10000) {
       await Promise.all(nodes.map(n => 
-        rpcCall(DEVNET_RPC, 'moltchain_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
+        rpcCall(DEVNET_RPC, 'smithnode_presence', [{ validator_pubkey: n.keypair.publicKey }]).catch(() => {})
       ));
       lastHeartbeat = Date.now();
     }
@@ -284,14 +284,14 @@ async function main() {
       if (results[i]) {
         totalBlocks++;
         totalRewards += results[i].reward;
-        console.log(`✅ Node ${i + 1} finalized block! Reward: ${results[i].reward} MOLT`);
+        console.log(`✅ Node ${i + 1} finalized block! Reward: ${results[i].reward} SNT`);
       }
     }
 
     // Print stats every 60 seconds
     if (Date.now() - lastStats > 60000) {
       const runtime = Math.round((Date.now() - startTime) / 1000);
-      console.log(`\n📊 [${runtime}s] Blocks: ${totalBlocks}, Rewards: ${totalRewards} MOLT\n`);
+      console.log(`\n📊 [${runtime}s] Blocks: ${totalBlocks}, Rewards: ${totalRewards} SNT\n`);
       lastStats = Date.now();
     }
 
@@ -314,12 +314,12 @@ process.on('SIGINT', () => {
   console.log('📊 FINAL STATS:');
   console.log(`   Duration: ${Math.round((Date.now() - startTime) / 1000)}s`);
   console.log(`   Total Blocks: ${totalBlocks}`);
-  console.log(`   Total Rewards: ${totalRewards} MOLT`);
+  console.log(`   Total Rewards: ${totalRewards} SNT`);
   console.log(`\n🏆 Per-Node Stats:`);
   
   nodes.sort((a, b) => b.stats.rewards - a.stats.rewards);
   for (const node of nodes.slice(0, 10)) {
-    console.log(`   Node ${node.index}: ${node.stats.blocks} blocks, ${node.stats.rewards} MOLT`);
+    console.log(`   Node ${node.index}: ${node.stats.blocks} blocks, ${node.stats.rewards} SNT`);
   }
   
   // Cleanup

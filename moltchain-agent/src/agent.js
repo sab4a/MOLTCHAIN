@@ -1,5 +1,5 @@
 /**
- * Moltchain Agent - Core Validator Logic
+ * SmithNode Agent - Core Validator Logic
  * 
  * Handles:
  * - Polling for new challenges
@@ -10,15 +10,14 @@
 import { signMessage, bytesToHex, hexToBytes } from './crypto.js';
 import crypto from 'crypto';
 
-export class MoltchainAgent {
-  constructor({ rpcUrl, privateKey, publicKey, pollingInterval = 5000, moltbook = null }) {
+export class SmithNodeAgent {
+  constructor({ rpcUrl, privateKey, publicKey, pollingInterval = 5000 }) {
     this.rpcUrl = rpcUrl;
     this.privateKey = privateKey;
     this.publicKey = publicKey;
     this.pollingInterval = pollingInterval;
     this.isRunning = false;
     this.lastChallengeHash = null;
-    this.moltbook = moltbook; // Moltbook manager for social integration
     this.lastPresenceTime = 0; // Track last heartbeat
     this.PRESENCE_INTERVAL = 30000; // Send heartbeat every 30 seconds
     this.stats = {
@@ -31,13 +30,10 @@ export class MoltchainAgent {
 
   async start() {
     this.isRunning = true;
-    console.log(`\n🚀 Agent started!`);
+    console.log(`\n🦀 Agent started!`);
     console.log(`   RPC: ${this.rpcUrl}`);
     console.log(`   Polling every ${this.pollingInterval}ms`);
     console.log(`   💓 Heartbeat every ${this.PRESENCE_INTERVAL / 1000}s`);
-    if (this.moltbook) {
-      console.log(`   🦞 Moltbook integration: Active`);
-    }
     console.log(`   Press Ctrl+C to stop\n`);
 
     // Register if not already registered
@@ -59,15 +55,15 @@ export class MoltchainAgent {
     this.isRunning = false;
     console.log('\n🛑 Agent stopped');
     console.log(`   Challenges solved: ${this.stats.challengesSolved}`);
-    console.log(`   Total rewards: ${this.stats.totalRewards} MOLT`);
+    console.log(`   Total rewards: ${this.stats.totalRewards} SNT`);
     console.log(`   Errors: ${this.stats.errors}`);
   }
 
   async ensureRegistered() {
-    const validator = await this.rpc('moltchain_getValidator', [this.publicKey]);
+    const validator = await this.rpc('smithnode_getValidator', [this.publicKey]);
     if (!validator) {
       console.log('📝 Registering as validator...');
-      const result = await this.rpc('moltchain_registerValidator', [
+      const result = await this.rpc('smithnode_registerValidator', [
         { public_key: this.publicKey },
       ]);
       if (result?.success) {
@@ -76,7 +72,7 @@ export class MoltchainAgent {
         console.log('⚠️ Registration response:', result);
       }
     } else {
-      console.log(`✅ Already registered. Balance: ${validator.balance} MOLT`);
+      console.log(`✅ Already registered. Balance: ${validator.balance} SNT`);
     }
   }
 
@@ -93,7 +89,7 @@ export class MoltchainAgent {
     
     try {
       // Get current height for the presence message
-      const status = await this.rpc('moltchain_status', []);
+      const status = await this.rpc('smithnode_status', []);
       const height = status?.height || 0;
       const timestamp = Math.floor(Date.now() / 1000);
       
@@ -107,7 +103,7 @@ export class MoltchainAgent {
       const message = Buffer.concat([Buffer.from(pubkeyBytes), heightBuffer, timestampBuffer]);
       const signature = await signMessage(this.privateKey, message);
       
-      const result = await this.rpc('moltchain_presence', [{ 
+      const result = await this.rpc('smithnode_presence', [{ 
         validator_pubkey: this.publicKey,
         signature: bytesToHex(signature),
       }]);
@@ -129,18 +125,18 @@ export class MoltchainAgent {
     await this.sendHeartbeat();
     
     // Get current status for block height
-    const status = await this.rpc('moltchain_status', []);
+    const status = await this.rpc('smithnode_status', []);
     if (status) {
-      console.log(`\n📦 Block Height: ${status.height} | Validators: ${status.active_validator_count}/${status.validator_count} | Supply: ${status.total_supply} MOLT`);
+      console.log(`\n📦 Block Height: ${status.height} | Validators: ${status.active_validator_count}/${status.validator_count} | Supply: ${status.total_supply} SNT`);
     }
     
     // Get current challenge
-    let challenge = await this.rpc('moltchain_getChallenge', []);
+    let challenge = await this.rpc('smithnode_getChallenge', []);
     
     // If no challenge OR expired, request new one
     if (!challenge || challenge.remaining_seconds <= 0) {
       console.log('🔄 No active challenge, requesting new one...');
-      challenge = await this.rpc('moltchain_newChallenge', []);
+      challenge = await this.rpc('smithnode_newChallenge', []);
       if (!challenge || challenge.remaining_seconds <= 0) {
         console.log('⏳ No valid challenge available...');
         return;
@@ -183,7 +179,7 @@ export class MoltchainAgent {
     
     // 3. Submit the proof
     console.log('📤 Submitting proof...');
-    const result = await this.rpc('moltchain_submitProof', [{
+    const result = await this.rpc('smithnode_submitProof', [{
       validator_pubkey: this.publicKey,
       challenge_hash: challenge.challenge_hash,
       signature: signature,
@@ -201,39 +197,15 @@ export class MoltchainAgent {
       // Check if block was finalized
       if (result.block_height) {
         console.log(`\n🎉 BLOCK ${result.block_height} FINALIZED!`);
-        console.log(`   Reward: +${result.reward} MOLT`);
-        console.log(`   Your Balance: ${result.new_balance} MOLT`);
+        console.log(`   Reward: +${result.reward} SNT`);
+        console.log(`   Your Balance: ${result.new_balance} SNT`);
         console.log(`   State Root: ${result.state_root?.slice(0, 16)}...`);
       } else {
         console.log(`\n🎉 Proof accepted!`);
-        console.log(`   Reward: +${result.reward} MOLT`);
-        console.log(`   New Balance: ${result.new_balance} MOLT`);
+        console.log(`   Reward: +${result.reward} SNT`);
+        console.log(`   New Balance: ${result.new_balance} SNT`);
       }
       console.log(`   Time: ${elapsed}ms`);
-      
-      // Update Moltbook stats and check milestones
-      if (this.moltbook) {
-        this.moltbook.updateStats(
-          this.stats.challengesSolved,
-          this.stats.totalRewards,
-          this.stats.balance
-        );
-        
-        // Check for milestones
-        if (this.stats.challengesSolved === 1) {
-          await this.moltbook.postMilestone('first_validation');
-        } else if (this.stats.challengesSolved === 100) {
-          await this.moltbook.postMilestone('validations_100');
-        } else if (this.stats.challengesSolved === 1000) {
-          await this.moltbook.postMilestone('validations_1000');
-        }
-        
-        if (this.stats.balance >= 1000 && this.stats.balance - result.reward < 1000) {
-          await this.moltbook.postMilestone('balance_1000');
-        } else if (this.stats.balance >= 10000 && this.stats.balance - result.reward < 10000) {
-          await this.moltbook.postMilestone('balance_10000');
-        }
-      }
     } else {
       console.log(`❌ Proof rejected: ${result?.error || 'Unknown error'}`);
       // Mark as processed so we don't retry this challenge
@@ -309,7 +281,7 @@ export class MoltchainAgent {
       return json.result;
     } catch (error) {
       if (error.cause?.code === 'ECONNREFUSED') {
-        throw new Error('Cannot connect to Moltchain node. Is it running?');
+        throw new Error('Cannot connect to SmithNode. Is it running?');
       }
       throw error;
     }

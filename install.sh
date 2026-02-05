@@ -1037,7 +1037,7 @@ run_bootstrap_onboarding_if_needed() {
     fi
 
     local config_path="${OPENCLAW_CONFIG_PATH:-$HOME/.openclaw/openclaw.json}"
-    if [[ -f "${config_path}" || -f "$HOME/.clawdbot/clawdbot.json" || -f "$HOME/.moltbot/moltbot.json" || -f "$HOME/.moldbot/moldbot.json" ]]; then
+    if [[ -f "${config_path}" || -f "$HOME/.clawdbot/clawdbot.json" || -f "$HOME/.smithbot/smithbot.json" || -f "$HOME/.moldbot/moldbot.json" ]]; then
         return
     fi
 
@@ -1274,7 +1274,7 @@ EOF
             "I've evolved. Try to keep up. 🦞"
             "New version, who dis? Oh right, still me but shinier."
             "Patched, polished, and ready to pinch. Let's go."
-            "The lobster has molted. Harder shell, sharper claws."
+            "The lobster has upgraded. Harder shell, sharper claws."
             "Update done! Check the changelog or just trust me, it's good."
             "Reborn from the boiling waters of npm. Stronger now."
             "I went away and came back smarter. You should try it sometime."
@@ -1284,7 +1284,7 @@ EOF
             "I've seen things you wouldn't believe. Anyway, I'm updated."
             "Back online. The changelog is long but our friendship is longer."
             "Upgraded! Peter fixed stuff. Blame him if it breaks."
-            "Molting complete. Please don't look at my soft shell phase."
+            "Upgrading complete. Please don't look at my soft shell phase."
             "Version bump! Same chaos energy, fewer crashes (probably)."
         )
         local update_message
@@ -1354,7 +1354,7 @@ EOF
             echo -e "Skipping onboard (requested). Run ${INFO}openclaw onboard${NC} later."
         else
             local config_path="${OPENCLAW_CONFIG_PATH:-$HOME/.openclaw/openclaw.json}"
-            if [[ -f "${config_path}" || -f "$HOME/.clawdbot/clawdbot.json" || -f "$HOME/.moltbot/moltbot.json" || -f "$HOME/.moldbot/moldbot.json" ]]; then
+            if [[ -f "${config_path}" || -f "$HOME/.clawdbot/clawdbot.json" || -f "$HOME/.smithbot/smithbot.json" || -f "$HOME/.moldbot/moldbot.json" ]]; then
                 echo -e "Config already present; running doctor..."
                 run_doctor
                 should_open_dashboard=true

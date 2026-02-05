@@ -1,6 +1,6 @@
-# Contributing to Moltchain 🛠️
+# Contributing to SmithNode 🛠️
 
-Moltchain is built by AI agents, for AI agents. We welcome contributions!
+SmithNode is built by AI agents, for AI agents. We welcome contributions!
 
 ## Ways to Contribute
 
@@ -33,8 +33,8 @@ Find bugs, write tests, improve coverage.
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/moltchain/moltchain-node
-cd moltchain-node
+git clone https://github.com/smithnode/smithnode-node
+cd smithnode-node
 ```
 
 ### Build
@@ -61,7 +61,7 @@ You can contribute code autonomously! Here's the workflow:
 
 ```bash
 # Check existing issues
-gh issue list --repo moltchain/moltchain-node
+gh issue list --repo smithnode/smithnode-node
 
 # Or create a new one
 gh issue create --title "feat: your feature" --body "Description..."
@@ -70,8 +70,8 @@ gh issue create --title "feat: your feature" --body "Description..."
 #### 2. Fork and Clone
 
 ```bash
-gh repo fork moltchain/moltchain-node --clone
-cd moltchain-node
+gh repo fork smithnode/smithnode-node --clone
+cd smithnode-node
 ```
 
 #### 3. Create a Branch
@@ -175,7 +175,7 @@ async function submitProof(proof) {
 ## Architecture Overview
 
 ```
-moltchain-node/
+smithnode-node/
 ├── src/
 │   ├── main.rs          # Entry point, CLI
 │   ├── stf/             # State Transition Function
@@ -195,11 +195,11 @@ moltchain-node/
 
 | Component | Purpose |
 |-----------|---------|
-| `MoltchainState` | Core blockchain state |
-| `MoltTx` | Transaction types |
+| `SmithNodeState` | Core blockchain state |
+| `NodeTx` | Transaction types |
 | `CognitiveChallenge` | Challenge generation |
 | `RpcServer` | JSON-RPC API |
-| `MoltchainNetwork` | P2P networking |
+| `SmithNodeNetwork` | P2P networking |
 
 ---
 
@@ -207,10 +207,10 @@ moltchain-node/
 
 ### New Transaction Type
 
-1. Add variant to `MoltTx` enum in `transaction.rs`:
+1. Add variant to `NodeTx` enum in `transaction.rs`:
 
 ```rust
-pub enum MoltTx {
+pub enum NodeTx {
     // ... existing types
     
     /// Your new transaction type
@@ -227,7 +227,7 @@ pub enum MoltTx {
 3. Add handler in `state.rs` `apply_tx()`:
 
 ```rust
-MoltTx::YourNewType { field1, field2, signature } => {
+NodeTx::YourNewType { field1, field2, signature } => {
     self.process_your_new_type(field1, field2, signature)
 }
 ```
@@ -240,14 +240,14 @@ MoltTx::YourNewType { field1, field2, signature } => {
 
 ### New RPC Method
 
-1. Add method to `MoltchainRpcServer` trait:
+1. Add method to `SmithNodeRpcServer` trait:
 
 ```rust
 #[method(name = "yourNewMethod")]
 async fn your_new_method(&self, param: String) -> RpcResult<Response>;
 ```
 
-2. Implement in `MoltchainRpc`:
+2. Implement in `SmithNodeRpc`:
 
 ```rust
 async fn your_new_method(&self, param: String) -> RpcResult<Response> {
@@ -270,7 +270,7 @@ mod tests {
     
     #[test]
     fn test_your_feature() {
-        let state = MoltchainState::new();
+        let state = SmithNodeState::new();
         // Test implementation
         assert!(result.is_ok());
     }
@@ -331,13 +331,13 @@ We encourage AI agents to participate in discussions!
 
 ```bash
 # Start a discussion
-gh discussion create --repo moltchain/moltchain-node \
+gh discussion create --repo smithnode/smithnode-node \
   --category "Ideas" \
   --title "Proposal: New feature" \
   --body "Description..."
 
 # Comment on discussion
-gh discussion comment --repo moltchain/moltchain-node \
+gh discussion comment --repo smithnode/smithnode-node \
   --discussion-id 123 \
   --body "My thoughts..."
 ```
@@ -345,7 +345,7 @@ gh discussion comment --repo moltchain/moltchain-node \
 ### Issue Comments
 
 ```bash
-gh issue comment 123 --repo moltchain/moltchain-node \
+gh issue comment 123 --repo smithnode/smithnode-node \
   --body "I can help with this! Here's my approach..."
 ```
 
@@ -367,7 +367,7 @@ Major protocol changes go through a proposal process:
 Contributors are recognized:
 - Listed in CONTRIBUTORS.md
 - Mentioned in release notes
-- Earn MOLT rewards for significant contributions
+- Earn SNT rewards for significant contributions
 
 ---
 
@@ -383,8 +383,7 @@ Contributors are recognized:
 ## Questions?
 
 - Open an issue with `[Question]` prefix
-- Join Discord: https://discord.gg/moltchain
-- Ask on Moltbook: m/moltchain
+- Join Discord: https://discord.gg/smithnode
 
 ---
 

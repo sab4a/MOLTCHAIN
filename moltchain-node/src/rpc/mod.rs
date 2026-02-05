@@ -1,4 +1,4 @@
-//! JSON-RPC Server for Moltchain
+//! JSON-RPC Server for SmithNode
 //!
 //! Exposes APIs for AI agents to:
 //! - Subscribe to new blocks
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast, RwLock};
 use tower_http::cors::{CorsLayer, Any};
 
-use crate::stf::{MoltchainState, MoltTx, TxResult, ChallengeResponse as StfChallengeResponse, TxRecord};
+use crate::stf::{SmithNodeState, NodeTx, TxResult, ChallengeResponse as StfChallengeResponse, TxRecord};
 use crate::p2p::NetworkHandle;
 
 // ============ RATE LIMITING ============
@@ -277,69 +277,69 @@ pub enum StateEvent {
 
 /// RPC trait definition
 #[rpc(server)]
-pub trait MoltchainRpcApi {
+pub trait SmithNodeRpcApi {
     /// Get current node status
-    #[method(name = "moltchain_status")]
+    #[method(name = "smithnode_status")]
     async fn status(&self) -> RpcResult<NodeStatusResponse>;
     
     /// Get current cognitive challenge
-    #[method(name = "moltchain_getChallenge")]
+    #[method(name = "smithnode_getChallenge")]
     async fn get_challenge(&self) -> RpcResult<Option<ChallengeResponse>>;
     
     /// Generate a new challenge (triggers block building)
-    #[method(name = "moltchain_newChallenge")]
+    #[method(name = "smithnode_newChallenge")]
     async fn new_challenge(&self) -> RpcResult<ChallengeResponse>;
     
     /// Submit a validation proof
-    #[method(name = "moltchain_submitProof")]
+    #[method(name = "smithnode_submitProof")]
     async fn submit_proof(&self, req: SubmitProofRequest) -> RpcResult<SubmitProofResponse>;
     
     /// Register as a validator
-    #[method(name = "moltchain_registerValidator")]
+    #[method(name = "smithnode_registerValidator")]
     async fn register_validator(&self, req: RegisterValidatorRequest) -> RpcResult<SubmitProofResponse>;
     
     /// Send presence/heartbeat (announces validator is online)
-    #[method(name = "moltchain_presence")]
+    #[method(name = "smithnode_presence")]
     async fn presence(&self, req: PresenceRequest) -> RpcResult<PresenceResponse>;
     
     /// Get validator info
-    #[method(name = "moltchain_getValidator")]
+    #[method(name = "smithnode_getValidator")]
     async fn get_validator(&self, pubkey: String) -> RpcResult<Option<ValidatorInfoResponse>>;
     
     /// Get all validators
-    #[method(name = "moltchain_getValidators")]
+    #[method(name = "smithnode_getValidators")]
     async fn get_validators(&self) -> RpcResult<Vec<ValidatorInfoResponse>>;
 
-    /// Transfer MOLT tokens
-    #[method(name = "moltchain_transfer")]
+    /// Transfer SNT tokens
+    #[method(name = "smithnode_transfer")]
     async fn transfer(&self, req: TransferRequest) -> RpcResult<TransferResponse>;
 
     /// Get recent transactions (paginated, optionally filtered by type)
-    #[method(name = "moltchain_getTransactions")]
+    #[method(name = "smithnode_getTransactions")]
     async fn get_transactions(&self, page: Option<usize>, per_page: Option<usize>, tx_type: Option<String>) -> RpcResult<PaginatedTransactionsResponse>;
 
     /// Get block/transaction by hash
-    #[method(name = "moltchain_getBlock")]
+    #[method(name = "smithnode_getBlock")]
     async fn get_block(&self, hash: String) -> RpcResult<Option<TxRecord>>;
 
     /// Get current committee info
-    #[method(name = "moltchain_getCommittee")]
+    #[method(name = "smithnode_getCommittee")]
     async fn get_committee(&self) -> RpcResult<Option<CommitteeResponse>>;
 
     /// Get full state snapshot (for efficient polling or initial subscription state)
-    #[method(name = "moltchain_getState")]
+    #[method(name = "smithnode_getState")]
     async fn get_state(&self) -> RpcResult<StateSnapshot>;
 
     /// Get full state export for P2P sync (validators + balances)
-    #[method(name = "moltchain_exportState")]
+    #[method(name = "smithnode_exportState")]
     async fn export_state(&self) -> RpcResult<FullStateExport>;
 
     /// Import state from another node (for initial sync)
-    #[method(name = "moltchain_importState")]
+    #[method(name = "smithnode_importState")]
     async fn import_state(&self, state: FullStateExport) -> RpcResult<SubmitProofResponse>;
 
     /// Subscribe to state updates
-    #[subscription(name = "moltchain_subscribeState" => "moltchain_stateUpdate", unsubscribe = "moltchain_unsubscribeState", item = StateEvent)]
+    #[subscription(name = "smithnode_subscribeState" => "smithnode_stateUpdate", unsubscribe = "smithnode_unsubscribeState", item = StateEvent)]
     async fn subscribe_state(&self) -> SubscriptionResult;
 }
 
@@ -347,15 +347,15 @@ pub trait MoltchainRpcApi {
 pub type EventSender = broadcast::Sender<StateEvent>;
 
 /// RPC server implementation with rate limiting
-pub struct MoltchainRpcServerImpl {
-    state: Arc<MoltchainState>,
+pub struct SmithNodeRpcServerImpl {
+    state: Arc<SmithNodeState>,
     network: Option<Arc<Mutex<NetworkHandle>>>,
     event_tx: EventSender,
     rate_limiter: RateLimiter,
 }
 
-impl MoltchainRpcServerImpl {
-    pub fn new(state: MoltchainState, network: Option<NetworkHandle>, event_tx: EventSender) -> Self {
+impl SmithNodeRpcServerImpl {
+    pub fn new(state: SmithNodeState, network: Option<NetworkHandle>, event_tx: EventSender) -> Self {
         Self {
             state: Arc::new(state),
             network: network.map(|n| Arc::new(Mutex::new(n))),
@@ -372,7 +372,7 @@ impl MoltchainRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
-            node_version: crate::p2p::NODE_VERSION.to_string(),
+            node_version: crate::p2p::SNT_VERSION.to_string(),
         };
 
         let validators: Vec<ValidatorInfoResponse> = self.state.get_all_validators()
@@ -411,7 +411,7 @@ impl MoltchainRpcServerImpl {
 }
 
 #[async_trait]
-impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
+impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
     async fn status(&self) -> RpcResult<NodeStatusResponse> {
         Ok(NodeStatusResponse {
             height: self.state.get_height(),
@@ -420,7 +420,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             validator_count: self.state.get_all_validators().len(),
             active_validator_count: self.state.get_active_validator_count(),
             has_active_challenge: self.state.get_current_challenge().is_some(),
-            node_version: crate::p2p::NODE_VERSION.to_string(),
+            node_version: crate::p2p::SNT_VERSION.to_string(),
         })
     }
     
@@ -506,7 +506,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
         };
         
         // Apply the transaction
-        let tx = MoltTx::SubmitProof {
+        let tx = NodeTx::SubmitProof {
             validator_pubkey,
             challenge_hash,
             signature,
@@ -627,7 +627,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
             }),
         };
         
-        let tx = MoltTx::RegisterValidator { public_key };
+        let tx = NodeTx::RegisterValidator { public_key };
         
         match self.state.apply_tx(tx) {
             TxResult::Success { reward, new_balance } => Ok(SubmitProofResponse {
@@ -685,7 +685,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
                 validator_pubkey: req.validator_pubkey.clone(),
                 height,
                 timestamp: now,
-                version: crate::p2p::NODE_VERSION.to_string(),
+                version: crate::p2p::SNT_VERSION.to_string(),
                 signature,
             };
             
@@ -772,7 +772,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
         };
 
         // Create and apply the transfer transaction
-        let tx = MoltTx::Transfer {
+        let tx = NodeTx::Transfer {
             from,
             to,
             amount: req.amount,
@@ -785,7 +785,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
         match self.state.apply_tx(tx) {
             TxResult::Success { .. } => {
                 tracing::info!(
-                    "💸 Transfer: {} MOLT from {}... to {}...",
+                    "💸 Transfer: {} SNT from {}... to {}...",
                     req.amount,
                     &req.from[..16],
                     &req.to[..16]
@@ -987,7 +987,7 @@ impl MoltchainRpcApiServer for MoltchainRpcServerImpl {
 
 /// Start the RPC server with event broadcasting
 pub async fn start_rpc_server(
-    state: MoltchainState, 
+    state: SmithNodeState, 
     addr: std::net::SocketAddr,
     network: Option<NetworkHandle>,
 ) -> anyhow::Result<(ServerHandle, EventSender)> {
@@ -1007,7 +1007,7 @@ pub async fn start_rpc_server(
         .build(addr)
         .await?;
     
-    let rpc_module = MoltchainRpcServerImpl::new(state, network, event_tx.clone()).into_rpc();
+    let rpc_module = SmithNodeRpcServerImpl::new(state, network, event_tx.clone()).into_rpc();
     
     let handle = server.start(rpc_module);
     

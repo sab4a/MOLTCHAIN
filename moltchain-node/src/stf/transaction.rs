@@ -1,4 +1,4 @@
-//! Transaction types for Moltchain
+//! Transaction types for SmithNode
 
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
@@ -19,12 +19,12 @@ pub const GAS_PER_BYTE: u64 = 1;           // Per byte of calldata
 
 /// Default gas price (can be adjusted by governance later)
 #[allow(dead_code)]
-pub const DEFAULT_GAS_PRICE: u64 = 1;      // 1 MOLT per gas unit
+pub const DEFAULT_GAS_PRICE: u64 = 1;      // 1 SNT per gas unit
 
-/// Transaction types supported by Moltchain
+/// Transaction types supported by SmithNode
 /// Note: Internal transactions use raw bytes, serialization happens at RPC layer
 #[derive(Clone, Debug)]
-pub enum MoltTx {
+pub enum NodeTx {
     /// Submit a validation proof (from AI agent)
     /// Gas: FREE (validators earn rewards, not pay fees)
     SubmitProof {
@@ -68,23 +68,23 @@ pub enum MoltTx {
         contract: [u8; 32],     // Contract address
         method: String,         // Method name
         args: Vec<u8>,          // Encoded arguments
-        value: u64,             // MOLT to send with call
+        value: u64,             // SNT to send with call
         gas_limit: u64,
         signature: [u8; 64],
     },
 }
 
-impl MoltTx {
+impl NodeTx {
     /// Get the gas cost for this transaction (currently waived for basic tx types)
     pub fn gas_cost(&self) -> u64 {
         match self {
-            MoltTx::SubmitProof { .. } => GAS_PROOF,
-            MoltTx::Transfer { .. } => 0, // GAS_TRANSFER - currently waived
-            MoltTx::RegisterValidator { .. } => 0, // GAS_REGISTER - currently waived
-            MoltTx::DeployContract { code, .. } => {
+            NodeTx::SubmitProof { .. } => GAS_PROOF,
+            NodeTx::Transfer { .. } => 0, // GAS_TRANSFER - currently waived
+            NodeTx::RegisterValidator { .. } => 0, // GAS_REGISTER - currently waived
+            NodeTx::DeployContract { code, .. } => {
                 GAS_CONTRACT_DEPLOY + (code.len() as u64 * GAS_PER_BYTE)
             }
-            MoltTx::CallContract { args, .. } => {
+            NodeTx::CallContract { args, .. } => {
                 GAS_CONTRACT_CALL_BASE + (args.len() as u64 * GAS_PER_BYTE)
             }
         }
@@ -93,8 +93,8 @@ impl MoltTx {
     /// Get the gas limit for this transaction
     pub fn gas_limit(&self) -> u64 {
         match self {
-            MoltTx::DeployContract { gas_limit, .. } => *gas_limit,
-            MoltTx::CallContract { gas_limit, .. } => *gas_limit,
+            NodeTx::DeployContract { gas_limit, .. } => *gas_limit,
+            NodeTx::CallContract { gas_limit, .. } => *gas_limit,
             _ => self.gas_cost(), // Fixed cost = limit for basic txs
         }
     }
@@ -104,7 +104,7 @@ impl MoltTx {
         let mut hasher = Sha256::new();
         
         match self {
-            MoltTx::SubmitProof {
+            NodeTx::SubmitProof {
                 validator_pubkey,
                 challenge_hash,
                 signature,
@@ -116,7 +116,7 @@ impl MoltTx {
                 hasher.update(signature);
                 hasher.update(verdict_digest);
             }
-            MoltTx::Transfer {
+            NodeTx::Transfer {
                 from,
                 to,
                 amount,
@@ -130,11 +130,11 @@ impl MoltTx {
                 hasher.update(&nonce.to_le_bytes());
                 hasher.update(signature);
             }
-            MoltTx::RegisterValidator { public_key } => {
+            NodeTx::RegisterValidator { public_key } => {
                 hasher.update(b"register_validator");
                 hasher.update(public_key);
             }
-            MoltTx::DeployContract {
+            NodeTx::DeployContract {
                 deployer,
                 code,
                 init_data,
@@ -148,7 +148,7 @@ impl MoltTx {
                 hasher.update(&gas_limit.to_le_bytes());
                 hasher.update(signature);
             }
-            MoltTx::CallContract {
+            NodeTx::CallContract {
                 caller,
                 contract,
                 method,

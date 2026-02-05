@@ -105,7 +105,7 @@ export default function Wallet() {
     try {
       const result = await registerValidator(activeAccount.publicKey);
       if (result.success) {
-        setSuccess('Registered as validator! You can now start earning MOLT.');
+        setSuccess('Registered as validator! You can now start earning SNT.');
         await refreshValidators();
       } else {
         setError(result.error || 'Registration failed');
@@ -169,7 +169,7 @@ export default function Wallet() {
           timestamp: Date.now() / 1000,
         });
         
-        setSuccess(`Successfully sent ${amount} MOLT!`);
+        setSuccess(`Successfully sent ${amount} SNT!`);
         setShowSendModal(false);
         setSendTo('');
         setSendAmount('');
@@ -214,11 +214,11 @@ export default function Wallet() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <WalletIcon className="w-7 h-7 text-molt-400" />
+            <WalletIcon className="w-7 h-7 text-smith-400" />
             Wallet
           </h1>
           <p className="text-dark-400 mt-1">
-            Manage your accounts and MOLT tokens
+            Manage your accounts and SNT tokens
           </p>
         </div>
         <div className="flex gap-2">
@@ -256,12 +256,12 @@ export default function Wallet() {
       {accounts.length === 0 ? (
         /* Empty State */
         <div className="card text-center py-16">
-          <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-molt-500/20 to-molt-600/10 flex items-center justify-center mb-6">
-            <WalletIcon className="w-10 h-10 text-molt-400" />
+          <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-smith-500/20 to-smith-600/10 flex items-center justify-center mb-6">
+            <WalletIcon className="w-10 h-10 text-smith-400" />
           </div>
           <h2 className="text-xl font-semibold mb-2">No Accounts Yet</h2>
           <p className="text-dark-400 max-w-md mx-auto mb-6">
-            Create your first account to start earning MOLT tokens as an AI validator.
+            Create your first account to start earning SNT tokens as an AI validator.
           </p>
           <div className="flex justify-center gap-3">
             <button 
@@ -296,7 +296,7 @@ export default function Wallet() {
                     onClick={() => setActiveAccount(index)}
                     className={`card cursor-pointer transition-all ${
                       isActive 
-                        ? 'border-molt-500 bg-molt-500/5' 
+                        ? 'border-smith-500 bg-smith-500/5' 
                         : 'hover:border-dark-600'
                     }`}
                   >
@@ -304,10 +304,10 @@ export default function Wallet() {
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                           isActive 
-                            ? 'bg-molt-500/20' 
+                            ? 'bg-smith-500/20' 
                             : 'bg-dark-700'
                         }`}>
-                          <Bot className={`w-5 h-5 ${isActive ? 'text-molt-400' : 'text-dark-400'}`} />
+                          <Bot className={`w-5 h-5 ${isActive ? 'text-smith-400' : 'text-dark-400'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           {editingName === index ? (
@@ -354,10 +354,10 @@ export default function Wallet() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className={`font-semibold ${isActive ? 'text-molt-400' : ''}`}>
+                        <p className={`font-semibold ${isActive ? 'text-smith-400' : ''}`}>
                           {formatNumber(validator?.balance || 0)}
                         </p>
-                        <p className="text-xs text-dark-400">MOLT</p>
+                        <p className="text-xs text-dark-400">SNT</p>
                       </div>
                     </div>
                     {validator && (
@@ -379,12 +379,12 @@ export default function Wallet() {
             {activeAccount && (
               <>
                 {/* Balance Card */}
-                <div className="card bg-gradient-to-br from-dark-900 via-dark-900 to-molt-950/20 border-molt-500/20">
+                <div className="card bg-gradient-to-br from-dark-900 via-dark-900 to-smith-950/20 border-smith-500/20">
                   <div className="flex items-start justify-between mb-6">
                     <div>
                       <p className="text-dark-400 mb-1">Total Balance</p>
                       <p className="text-4xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
-                        {formatNumber(activeValidator?.balance || 0)} MOLT
+                        {formatNumber(activeValidator?.balance || 0)} SNT
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -488,7 +488,7 @@ export default function Wallet() {
                         <p className="text-sm text-dark-400">Reputation</p>
                       </div>
                       <div className="p-4 bg-dark-800/50 rounded-xl text-center">
-                        <p className="text-2xl font-bold text-molt-400">
+                        <p className="text-2xl font-bold text-smith-400">
                           {formatNumber(activeValidator.validations_count * 100)}
                         </p>
                         <p className="text-sm text-dark-400">Total Earned</p>
@@ -599,7 +599,7 @@ export default function Wallet() {
       {/* Send Modal */}
       {showSendModal && (
         <Modal onClose={() => setShowSendModal(false)}>
-          <h2 className="text-xl font-bold mb-4">Send MOLT</h2>
+          <h2 className="text-xl font-bold mb-4">Send SNT</h2>
           <div className="space-y-4">
             <div>
               <label className="text-sm text-dark-400 mb-1 block">Recipient Address</label>
@@ -622,11 +622,11 @@ export default function Wallet() {
                   className="input pr-16"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-dark-400">
-                  MOLT
+                  SNT
                 </span>
               </div>
               <p className="text-xs text-dark-400 mt-1">
-                Available: {formatNumber(activeValidator?.balance || 0)} MOLT
+                Available: {formatNumber(activeValidator?.balance || 0)} SNT
               </p>
             </div>
             <div className="flex gap-3">

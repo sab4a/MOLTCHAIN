@@ -1,5 +1,5 @@
 /**
- * Cryptographic utilities for Moltchain Agent
+ * Cryptographic utilities for SmithNode Agent
  * Uses ed25519 for signing
  */
 

@@ -17,19 +17,19 @@ jobs:
         include:
           - target: x86_64-apple-darwin
             os: macos-latest
-            name: moltchain-darwin-x64
+            name: smithnode-darwin-x64
           - target: aarch64-apple-darwin
             os: macos-latest
-            name: moltchain-darwin-arm64
+            name: smithnode-darwin-arm64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            name: moltchain-linux-x64
+            name: smithnode-linux-x64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            name: moltchain-linux-arm64
+            name: smithnode-linux-arm64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            name: moltchain-windows-x64.exe
+            name: smithnode-windows-x64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build
-        working-directory: moltchain-node
+        working-directory: smithnode-node
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -54,13 +54,13 @@ jobs:
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
         run: |
-          mv moltchain-node/target/${{ matrix.target }}/release/moltchain ${{ matrix.name }}
+          mv smithnode-node/target/${{ matrix.target }}/release/smithnode ${{ matrix.name }}
           chmod +x ${{ matrix.name }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          mv moltchain-node/target/${{ matrix.target }}/release/moltchain.exe ${{ matrix.name }}
+          mv smithnode-node/target/${{ matrix.target }}/release/smithnode.exe ${{ matrix.name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -87,11 +87,11 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            binaries/moltchain-darwin-x64/moltchain-darwin-x64
-            binaries/moltchain-darwin-arm64/moltchain-darwin-arm64
-            binaries/moltchain-linux-x64/moltchain-linux-x64
-            binaries/moltchain-linux-arm64/moltchain-linux-arm64
-            binaries/moltchain-windows-x64.exe/moltchain-windows-x64.exe
+            binaries/smithnode-darwin-x64/smithnode-darwin-x64
+            binaries/smithnode-darwin-arm64/smithnode-darwin-arm64
+            binaries/smithnode-linux-x64/smithnode-linux-x64
+            binaries/smithnode-linux-arm64/smithnode-linux-arm64
+            binaries/smithnode-windows-x64.exe/smithnode-windows-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: false
@@ -110,8 +110,8 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish moltchain-agent
-        working-directory: moltchain-agent
+      - name: Publish smithnode-agent
+        working-directory: smithnode-agent
         run: |
           npm version ${{ github.ref_name }} --no-git-tag-version || true
           npm publish --access public

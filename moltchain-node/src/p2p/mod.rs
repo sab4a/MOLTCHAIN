@@ -1,4 +1,4 @@
-//! P2P Network Layer for Moltchain
+//! P2P Network Layer for SmithNode
 //!
 //! Uses libp2p to create a decentralized network similar to BitTorrent.
 //! Validators gossip challenges and proofs across the network.
@@ -17,19 +17,19 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::stf::{MoltchainState, CognitiveChallenge, ChallengeResponse, BlockHeader};
+use crate::stf::{SmithNodeState, CognitiveChallenge, ChallengeResponse, BlockHeader};
 
 /// Current node version - used for P2P compatibility checks
-pub const NODE_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const SNT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Topics for gossipsub
-const TOPIC_CHALLENGES: &str = "moltchain/challenges/1.0.0";
-const TOPIC_PROOFS: &str = "moltchain/proofs/1.0.0";
-const TOPIC_BLOCKS: &str = "moltchain/blocks/1.0.0";
-const TOPIC_STATE_SYNC: &str = "moltchain/state-sync/1.0.0";
-const TOPIC_PRESENCE: &str = "moltchain/presence/1.0.0";
+const TOPIC_CHALLENGES: &str = "smithnode/challenges/1.0.0";
+const TOPIC_PROOFS: &str = "smithnode/proofs/1.0.0";
+const TOPIC_BLOCKS: &str = "smithnode/blocks/1.0.0";
+const TOPIC_STATE_SYNC: &str = "smithnode/state-sync/1.0.0";
+const TOPIC_PRESENCE: &str = "smithnode/presence/1.0.0";
 #[allow(dead_code)]
-const TOPIC_UPGRADES: &str = "moltchain/upgrades/1.0.0";
+const TOPIC_UPGRADES: &str = "smithnode/upgrades/1.0.0";
 
 /// Heartbeat interval for presence announcements (30 seconds)
 pub const PRESENCE_HEARTBEAT_SECS: u64 = 30;
@@ -38,28 +38,28 @@ pub const PRESENCE_TIMEOUT_SECS: u64 = 90;
 
 /// Network behaviour combining gossipsub and mDNS
 #[derive(NetworkBehaviour)]
-#[behaviour(to_swarm = "MoltchainBehaviourEvent")]
-pub struct MoltchainBehaviour {
+#[behaviour(to_swarm = "SmithNodeBehaviourEvent")]
+pub struct SmithNodeBehaviour {
     gossipsub: gossipsub::Behaviour,
     mdns: mdns::tokio::Behaviour,
 }
 
 /// Events produced by the network behaviour
 #[derive(Debug)]
-pub enum MoltchainBehaviourEvent {
+pub enum SmithNodeBehaviourEvent {
     Gossipsub(gossipsub::Event),
     Mdns(mdns::Event),
 }
 
-impl From<gossipsub::Event> for MoltchainBehaviourEvent {
+impl From<gossipsub::Event> for SmithNodeBehaviourEvent {
     fn from(event: gossipsub::Event) -> Self {
-        MoltchainBehaviourEvent::Gossipsub(event)
+        SmithNodeBehaviourEvent::Gossipsub(event)
     }
 }
 
-impl From<mdns::Event> for MoltchainBehaviourEvent {
+impl From<mdns::Event> for SmithNodeBehaviourEvent {
     fn from(event: mdns::Event) -> Self {
-        MoltchainBehaviourEvent::Mdns(event)
+        SmithNodeBehaviourEvent::Mdns(event)
     }
 }
 
@@ -223,15 +223,15 @@ pub enum NetworkEvent {
 }
 
 /// The P2P network handler
-pub struct MoltchainNetwork {
-    swarm: Swarm<MoltchainBehaviour>,
+pub struct SmithNodeNetwork {
+    swarm: Swarm<SmithNodeBehaviour>,
     challenge_topic: IdentTopic,
     proof_topic: IdentTopic,
     block_topic: IdentTopic,
     state_sync_topic: IdentTopic,
     presence_topic: IdentTopic,
     local_peer_id: String,
-    state: MoltchainState,
+    state: SmithNodeState,
     command_rx: mpsc::Receiver<NetworkCommand>,
     event_tx: mpsc::Sender<NetworkEvent>,
 }
@@ -283,10 +283,10 @@ impl NetworkHandle {
     }
 }
 
-impl MoltchainNetwork {
+impl SmithNodeNetwork {
     pub async fn new(
         port: u16, 
-        state: MoltchainState,
+        state: SmithNodeState,
     ) -> anyhow::Result<(Self, NetworkHandle, mpsc::Receiver<NetworkEvent>)> {
         // Generate a random keypair for this node
         let local_key = libp2p::identity::Keypair::generate_ed25519();
@@ -328,7 +328,7 @@ impl MoltchainNetwork {
             local_peer_id,
         )?;
         
-        let behaviour = MoltchainBehaviour { gossipsub, mdns };
+        let behaviour = SmithNodeBehaviour { gossipsub, mdns };
         
         // Build the swarm with DNS support for resolving hostnames
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
@@ -401,25 +401,25 @@ impl MoltchainNetwork {
         }
     }
 
-    async fn handle_swarm_event<E>(&mut self, event: SwarmEvent<MoltchainBehaviourEvent, E>)
+    async fn handle_swarm_event<E>(&mut self, event: SwarmEvent<SmithNodeBehaviourEvent, E>)
     where E: std::fmt::Debug
     {
         match event {
-            SwarmEvent::Behaviour(MoltchainBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
+            SwarmEvent::Behaviour(SmithNodeBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
                 for (peer_id, addr) in peers {
                     tracing::info!("🔍 Discovered peer: {} at {}", peer_id, addr);
                     self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     let _ = self.event_tx.send(NetworkEvent::PeerConnected(peer_id.to_string())).await;
                 }
             }
-            SwarmEvent::Behaviour(MoltchainBehaviourEvent::Mdns(mdns::Event::Expired(peers))) => {
+            SwarmEvent::Behaviour(SmithNodeBehaviourEvent::Mdns(mdns::Event::Expired(peers))) => {
                 for (peer_id, _) in peers {
                     tracing::info!("👋 Peer expired: {}", peer_id);
                     self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                     let _ = self.event_tx.send(NetworkEvent::PeerDisconnected(peer_id.to_string())).await;
                 }
             }
-            SwarmEvent::Behaviour(MoltchainBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+            SwarmEvent::Behaviour(SmithNodeBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                 propagation_source,
                 message_id,
                 message,
@@ -517,7 +517,7 @@ impl MoltchainNetwork {
                 match self.state.verify_and_apply_proof(&msg.response) {
                     Ok(result) => {
                         tracing::info!(
-                            "🏆 Proof verified! Validator {} earned {} MOLT",
+                            "🏆 Proof verified! Validator {} earned {} SNT",
                             &msg.response.validator_pubkey[..16],
                             result.reward
                         );

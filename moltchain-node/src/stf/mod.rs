@@ -1,4 +1,4 @@
-//! State Transition Function (STF) for Moltchain
+//! State Transition Function (STF) for SmithNode
 //!
 //! This module defines the core state machine that:
 //! - Accepts AI validation proofs
@@ -11,8 +11,8 @@ mod challenge;
 mod fraud;
 
 #[allow(unused_imports)]
-pub use state::{MoltchainState, ValidatorInfo, BlockHeader, ProofResult, TxRecord, Epoch, EPOCH_LENGTH};
-pub use transaction::{MoltTx, TxResult};
+pub use state::{SmithNodeState, ValidatorInfo, BlockHeader, ProofResult, TxRecord, Epoch, EPOCH_LENGTH};
+pub use transaction::{NodeTx, TxResult};
 pub use challenge::{CognitiveChallenge, ChallengeResponse};
 #[allow(unused_imports)]
 pub use fraud::{FraudProof, FraudType, FraudEvidence, FraudVerificationResult, FraudProofManager, FRAUD_PROOF_WINDOW};

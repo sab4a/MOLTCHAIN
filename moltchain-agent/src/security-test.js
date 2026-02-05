@@ -1,5 +1,5 @@
 /**
- * Security and functionality tests for Moltchain
+ * Security and functionality tests for SmithNode
  */
 
 import * as ed from '@noble/ed25519';
@@ -13,7 +13,7 @@ ed.etc.sha512Sync = (...m) => {
   return hash.digest();
 };
 
-const RPC_URL = 'https://moltchain-rpc.fly.dev';
+const RPC_URL = 'https://smithnode-rpc.fly.dev';
 
 async function rpc(method, params = []) {
   const res = await fetch(RPC_URL, {
@@ -28,15 +28,15 @@ async function rpc(method, params = []) {
 
 async function runSecurityAudit() {
   console.log('═'.repeat(60));
-  console.log('🔒 MOLTCHAIN SECURITY & ARCHITECTURE AUDIT');
+  console.log('🔒 SMITHSNT SECURITY & ARCHITECTURE AUDIT');
   console.log('═'.repeat(60));
   
   // 1. Check current status
-  const status = await rpc('moltchain_status');
+  const status = await rpc('smithnode_status');
   console.log('\n📊 NETWORK STATUS:');
   console.log(`   Height: ${status.height}`);
   console.log(`   Validators: ${status.validator_count} (${status.active_validator_count} active)`);
-  console.log(`   Total Supply: ${status.total_supply} MOLT`);
+  console.log(`   Total Supply: ${status.total_supply} SNT`);
   console.log(`   Version: ${status.node_version}`);
   
   // 2. Test importState security
@@ -59,7 +59,7 @@ async function runSecurityAudit() {
   };
   
   try {
-    const importResult = await rpc('moltchain_importState', [fakeState]);
+    const importResult = await rpc('smithnode_importState', [fakeState]);
     if (importResult.success) {
       console.log('   ⚠️ VULNERABILITY: Fake state was imported!');
     } else {
@@ -70,7 +70,7 @@ async function runSecurityAudit() {
   }
   
   // Verify state unchanged
-  const status2 = await rpc('moltchain_status');
+  const status2 = await rpc('smithnode_status');
   console.log(`   Verified: Height still ${status2.height}, supply ${status2.total_supply}`);
   
   // 3. Test transfer signature verification
@@ -78,7 +78,7 @@ async function runSecurityAudit() {
   console.log('   Attempting transfer with fake signature...');
   
   try {
-    const invalidTransfer = await rpc('moltchain_transfer', [{
+    const invalidTransfer = await rpc('smithnode_transfer', [{
       from: 'a'.repeat(64),
       to: 'b'.repeat(64),
       amount: 1000,
@@ -98,7 +98,7 @@ async function runSecurityAudit() {
   console.log('   Attempting to submit proof with fake signature...');
   
   try {
-    const fakeProof = await rpc('moltchain_submitProof', [{
+    const fakeProof = await rpc('smithnode_submitProof', [{
       validator_pubkey: 'd'.repeat(64),
       challenge_hash: 'e'.repeat(64),
       signature: 'f'.repeat(128),
@@ -115,14 +115,14 @@ async function runSecurityAudit() {
   
   // 5. Test blocks without transactions
   console.log('\n🧪 TEST 4: Blocks Without Transactions');
-  const challenge = await rpc('moltchain_getChallenge');
+  const challenge = await rpc('smithnode_getChallenge');
   if (challenge) {
     console.log(`   Active challenge: ${challenge.challenge_hash.substring(0, 16)}...`);
     console.log(`   Pending tx count: ${challenge.pending_tx_count}`);
     console.log(`   ✅ Blocks produce even with 0 pending transactions`);
   } else {
     console.log('   No active challenge - generating one...');
-    const newChallenge = await rpc('moltchain_newChallenge');
+    const newChallenge = await rpc('smithnode_newChallenge');
     console.log(`   Pending tx count: ${newChallenge.pending_tx_count}`);
     console.log(`   ✅ Blocks produce even with 0 pending transactions`);
   }
@@ -148,15 +148,15 @@ async function testMultipleTransfers() {
   }
   
   // Check balance
-  const validator = await rpc('moltchain_getValidator', [keypair.publicKey]);
+  const validator = await rpc('smithnode_getValidator', [keypair.publicKey]);
   if (!validator) {
     console.log('❌ Validator not registered on devnet');
     return;
   }
-  console.log(`   Balance: ${validator.balance} MOLT`);
+  console.log(`   Balance: ${validator.balance} SNT`);
   
   if (validator.balance < 50) {
-    console.log('❌ Insufficient balance for tests (need at least 50 MOLT)');
+    console.log('❌ Insufficient balance for tests (need at least 50 SNT)');
     return;
   }
   
@@ -168,7 +168,7 @@ async function testMultipleTransfers() {
     recipients.push(bytesToHex(pubKey));
   }
   
-  console.log('\n📤 Sending 5 transfers of 1 MOLT each...');
+  console.log('\n📤 Sending 5 transfers of 1 SNT each...');
   
   const results = [];
   for (let i = 0; i < 5; i++) {
@@ -189,7 +189,7 @@ async function testMultipleTransfers() {
     
     // Send transfer
     try {
-      const result = await rpc('moltchain_transfer', [{
+      const result = await rpc('smithnode_transfer', [{
         from: keypair.publicKey,
         to: to,
         amount: Number(amount),
@@ -197,7 +197,7 @@ async function testMultipleTransfers() {
       }]);
       
       if (result.success) {
-        console.log(`   ✅ Transfer ${i + 1}: 1 MOLT → ${to.substring(0, 12)}... (tx: ${result.tx_hash?.substring(0, 12)}...)`);
+        console.log(`   ✅ Transfer ${i + 1}: 1 SNT → ${to.substring(0, 12)}... (tx: ${result.tx_hash?.substring(0, 12)}...)`);
         results.push({ success: true, to, txHash: result.tx_hash });
       } else {
         console.log(`   ❌ Transfer ${i + 1} failed: ${result.error}`);
@@ -213,11 +213,11 @@ async function testMultipleTransfers() {
   console.log(`\n📊 Results: ${successful}/5 transfers successful`);
   
   // Verify final balance
-  const finalValidator = await rpc('moltchain_getValidator', [keypair.publicKey]);
-  console.log(`   New balance: ${finalValidator.balance} MOLT (was ${validator.balance})`);
+  const finalValidator = await rpc('smithnode_getValidator', [keypair.publicKey]);
+  console.log(`   New balance: ${finalValidator.balance} SNT (was ${validator.balance})`);
   
   // Check if transfers appear in transactions
-  const txs = await rpc('moltchain_getTransactions', [1, 10, 'transfer']);
+  const txs = await rpc('smithnode_getTransactions', [1, 10, 'transfer']);
   console.log(`   Recent transfer count: ${txs.total}`);
 }
 
@@ -234,7 +234,7 @@ async function main() {
     console.log('\n📖 ARCHITECTURE SUMMARY:');
     console.log(`
 ┌─────────────────────────────────────────────────────────────┐
-│                  MOLTCHAIN ARCHITECTURE                     │
+│                  SMITHSNT ARCHITECTURE                     │
 ├─────────────────────────────────────────────────────────────┤
 │ Is it true P2P?                                             │
 │   - Full nodes: YES (libp2p gossipsub)                      │

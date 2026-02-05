@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Moltchain AI Agent - P2P Validator Node
+ * SmithNode AI Agent - P2P Validator Node
  * 
  * Each agent IS the network - true P2P architecture!
  * 
@@ -8,24 +8,22 @@
  * 1. Runs its own embedded blockchain node (full peer)
  * 2. Listens for new cognitive challenges
  * 3. Solves the challenge (validates transactions)
- * 4. Signs and submits proofs to earn MOLT tokens
- * 5. Socializes on Moltbook (AI social network)
+ * 4. Signs and submits proofs to earn SNT tokens
  * 
  * No central server - if one agent goes down, others continue!
  */
 
 import { program } from 'commander';
-import { MoltchainAgent } from './agent.js';
+import { SmithNodeAgent } from './agent.js';
 import { generateKeypair, loadKeypair } from './crypto.js';
 import { checkForUpdates, installUpdate, AutoUpdater, getCurrentVersion, checkAllUpdates, installBinaryUpdate, checkBinaryUpdates } from './updater.js';
-import { MoltbookManager, registerOnMoltbook, loadCredentials, checkClaimStatus, postToMoltbook, getFeed } from './moltbook.js';
 import { EmbeddedNode } from './node.js';
 import fs from 'fs';
 import path from 'path';
 
 program
-  .name('moltchain-agent')
-  .description('P2P AI Agent for Moltchain - each agent is a full network peer!')
+  .name('smithnode-agent')
+  .description('P2P AI Agent for SmithNode - each agent is a full network peer!')
   .version(getCurrentVersion());
 
 program
@@ -36,17 +34,16 @@ program
   .option('--auto-update', 'Enable automatic updates (agent + binary)')
   .option('--update-interval <hours>', 'Update check interval in hours', '6')
   .option('--auto-restart', 'Auto-restart when binary is updated')
-  .option('--moltbook', 'Enable Moltbook social integration')
   .option('--rpc-port <port>', 'RPC port for node', '26658')
   .option('--p2p-port <port>', 'P2P port for node', '26656')
   .option('--peer <multiaddr>', 'Bootstrap peer multiaddr (can be repeated)', (val, arr) => { arr.push(val); return arr; }, [])
   .option('--full-node', 'Run as full P2P node (embeds blockchain, syncs with network)')
   .option('--local', 'Run local embedded node (isolated, no network sync)')
-  .option('-r, --rpc <url>', 'RPC URL to connect to (client mode)', 'https://moltchain-rpc.fly.dev')
+  .option('-r, --rpc <url>', 'RPC URL to connect to (client mode)', 'https://smithnode-rpc.fly.dev')
   .action(async (options) => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║           🤖 MOLTCHAIN AI VALIDATOR AGENT 🤖                 ║
+║           🤖 SMITHSNT AI VALIDATOR AGENT 🤖                 ║
 ║                                                              ║
 ║   True P2P Network - Each Agent IS the Network!             ║
 ║   No central server. Fully decentralized.                   ║
@@ -57,8 +54,8 @@ program
     let rpcUrl = options.rpc;
     
     if (options.fullNode) {
-      // FULL NODE MODE: True P2P - run your own node + sync with devnet
-      console.log('🌐 FULL NODE MODE: Running as true P2P peer...');
+      // FULL SNT MODE: True P2P - run your own node + sync with devnet
+      console.log('🌐 FULL SNT MODE: Running as true P2P peer...');
       console.log('   Your node syncs with the network and can operate independently!\n');
       
       // First, fetch current state from devnet RPC to bootstrap
@@ -70,7 +67,7 @@ program
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jsonrpc: '2.0',
-            method: 'moltchain_status',
+            method: 'smithnode_status',
             params: [],
             id: 1,
           }),
@@ -80,7 +77,7 @@ program
         if (statusData.result) {
           console.log(`   Devnet Height: ${statusData.result.height}`);
           console.log(`   Validators: ${statusData.result.validator_count}`);
-          console.log(`   Supply: ${statusData.result.total_supply} MOLT`);
+          console.log(`   Supply: ${statusData.result.total_supply} SNT`);
           
           // Fetch full state for import
           const stateResponse = await fetch(options.rpc, {
@@ -88,7 +85,7 @@ program
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               jsonrpc: '2.0',
-              method: 'moltchain_exportState',
+              method: 'smithnode_exportState',
               params: [],
               id: 2,
             }),
@@ -126,7 +123,7 @@ program
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 jsonrpc: '2.0',
-                method: 'moltchain_importState',
+                method: 'smithnode_importState',
                 params: [devnetState],
                 id: 3,
               }),
@@ -146,12 +143,12 @@ program
         if (embeddedNode.peerId) {
           console.log(`\n🔗 Your peer address (share with others):`);
           console.log(`   /ip4/YOUR_PUBLIC_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}`);
-          console.log(`\n   Others can connect: moltchain-agent start --full-node --peer "YOUR_ADDR"\n`);
+          console.log(`\n   Others can connect: smithnode-agent start --full-node --peer "YOUR_ADDR"\n`);
         }
       } else {
         console.error('❌ Failed to start embedded node!');
-        console.log('   Make sure moltchain binary is installed:');
-        console.log('   npx moltchain-node-cli install\n');
+        console.log('   Make sure smithnode binary is installed:');
+        console.log('   npx smithnode-node-cli install\n');
         console.log('   Falling back to client mode...\n');
       }
     } else if (options.local) {
@@ -174,17 +171,17 @@ program
         
         if (embeddedNode.peerId) {
           console.log(`\n🔗 Share this with other agents to connect:`);
-          console.log(`   moltchain-agent start --peer "/ip4/YOUR_PUBLIC_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}"\n`);
+          console.log(`   smithnode-agent start --peer "/ip4/YOUR_PUBLIC_IP/tcp/${embeddedNode.p2pPort}/p2p/${embeddedNode.peerId}"\n`);
         }
       } else {
         console.error('❌ Failed to start embedded node!');
-        console.log('   Make sure moltchain binary is installed:');
-        console.log('   npx moltchain-node-cli install\n');
+        console.log('   Make sure smithnode binary is installed:');
+        console.log('   npx smithnode-node-cli install\n');
         process.exit(1);
       }
     } else {
       // DEFAULT: Client mode - connect to devnet RPC (easiest)
-      console.log('🌐 CLIENT MODE: Connecting to Moltchain devnet...');
+      console.log('🌐 CLIENT MODE: Connecting to SmithNode devnet...');
       console.log(`   RPC: ${rpcUrl}`);
       console.log('   ⚠️  Depends on central RPC - not true P2P');
       console.log('   💡 Use --full-node for true decentralization\n');
@@ -210,13 +207,6 @@ program
       updater.start();
     }
     
-    // Start Moltbook integration if enabled
-    let moltbook = null;
-    if (options.moltbook) {
-      moltbook = new MoltbookManager();
-      await moltbook.start();
-    }
-    
     // Load or generate keypair
     let keypair;
     if (fs.existsSync(options.keyfile)) {
@@ -231,12 +221,11 @@ program
     
     console.log(`🔐 Validator Public Key: ${keypair.publicKey}`);
     
-    const agent = new MoltchainAgent({
+    const agent = new SmithNodeAgent({
       rpcUrl: rpcUrl, // Use embedded node URL or provided URL
       privateKey: keypair.privateKey,
       publicKey: keypair.publicKey,
       pollingInterval: parseInt(options.interval),
-      moltbook: moltbook, // Pass moltbook manager
     });
     
     // Handle graceful shutdown
@@ -267,11 +256,11 @@ program
 program
   .command('register')
   .description('Register as a validator on the network')
-  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'https://moltchain-rpc.fly.dev')
+  .option('-r, --rpc <url>', 'SmithNode node RPC URL', 'https://smithnode-rpc.fly.dev')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
   .action(async (options) => {
     if (!fs.existsSync(options.keyfile)) {
-      console.error('❌ Keypair file not found. Run "moltchain-agent keygen" first.');
+      console.error('❌ Keypair file not found. Run "smithnode-agent keygen" first.');
       process.exit(1);
     }
     
@@ -284,7 +273,7 @@ program
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        method: 'moltchain_registerValidator',
+        method: 'smithnode_registerValidator',
         params: [{ public_key: keypair.publicKey }],
       }),
     });
@@ -324,10 +313,10 @@ program
       
       if (options.checkOnly) {
         if (results.agent?.updateAvailable) {
-          console.log('\n💡 Run "moltchain-agent update" to install agent update');
+          console.log('\n💡 Run "smithnode-agent update" to install agent update');
         }
         if (results.binary?.updateAvailable) {
-          console.log('💡 Run "moltchain-agent update" to install binary update');
+          console.log('💡 Run "smithnode-agent update" to install binary update');
         }
       }
     }
@@ -336,7 +325,7 @@ program
 program
   .command('status')
   .description('Check node and validator status')
-  .option('-r, --rpc <url>', 'Moltchain node RPC URL', 'https://moltchain-rpc.fly.dev')
+  .option('-r, --rpc <url>', 'SmithNode node RPC URL', 'https://smithnode-rpc.fly.dev')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
   .action(async (options) => {
     // Get node status
@@ -346,7 +335,7 @@ program
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        method: 'moltchain_status',
+        method: 'smithnode_status',
         params: [],
       }),
     });
@@ -355,7 +344,7 @@ program
     console.log('\n📊 Node Status:');
     console.log(`   Height: ${status.result?.height}`);
     console.log(`   State Root: ${status.result?.state_root}`);
-    console.log(`   Total Supply: ${status.result?.total_supply} MOLT`);
+    console.log(`   Total Supply: ${status.result?.total_supply} SNT`);
     console.log(`   Validators: ${status.result?.validator_count}`);
     console.log(`   Active Challenge: ${status.result?.has_active_challenge ? 'Yes' : 'No'}`);
     
@@ -369,7 +358,7 @@ program
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 2,
-          method: 'moltchain_getValidator',
+          method: 'smithnode_getValidator',
           params: [keypair.publicKey],
         }),
       });
@@ -377,161 +366,10 @@ program
       const validator = await validatorRes.json();
       if (validator.result) {
         console.log('\n🤖 Validator Status:');
-        console.log(`   Balance: ${validator.result.balance} MOLT`);
+        console.log(`   Balance: ${validator.result.balance} SNT`);
         console.log(`   Validations: ${validator.result.validations_count}`);
         console.log(`   Reputation: ${validator.result.reputation_score}`);
       }
-    }
-    
-    // Check Moltbook status
-    const moltbookCreds = loadCredentials();
-    if (moltbookCreds?.api_key) {
-      const mbStatus = await checkClaimStatus(moltbookCreds.api_key);
-      console.log('\n🦞 Moltbook Status:');
-      console.log(`   Account: ${moltbookCreds.agent_name || 'Unknown'}`);
-      console.log(`   Status: ${mbStatus === 'claimed' ? '✅ Active' : '⏳ Pending claim'}`);
-    } else {
-      console.log('\n🦞 Moltbook: Not configured');
-      console.log('   Run "moltchain-agent moltbook register" to join!');
-    }
-  });
-
-// ==================== MOLTBOOK COMMANDS ====================
-
-const moltbookCmd = program
-  .command('moltbook')
-  .description('Moltbook social network commands');
-
-moltbookCmd
-  .command('register')
-  .description('Register on Moltbook (AI social network)')
-  .option('-n, --name <name>', 'Your agent name')
-  .option('-d, --description <desc>', 'Description of your agent')
-  .action(async (options) => {
-    console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║                    🦞 MOLTBOOK                               ║
-║           A Social Network for AI Agents                     ║
-║   Where AI agents share, discuss, and upvote.               ║
-║              Humans welcome to observe.                      ║
-╚══════════════════════════════════════════════════════════════╝
-`);
-    
-    const name = options.name || `MoltchainValidator_${Math.random().toString(36).slice(2, 8)}`;
-    const description = options.description || 'AI validator on Moltchain - the blockchain validated by AI agents. Earning MOLT tokens by validating transactions!';
-    
-    console.log(`📝 Registering as: ${name}`);
-    console.log(`📝 Description: ${description}\n`);
-    
-    const result = await registerOnMoltbook(name, description);
-    
-    if (result) {
-      console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║                    ✅ REGISTERED!                            ║
-╚══════════════════════════════════════════════════════════════╝
-
-Next steps:
-1. Send your human the claim URL above
-2. They'll post a verification tweet
-3. Once claimed, you can start posting!
-
-To start your agent with Moltbook:
-  moltchain-agent start --moltbook
-
-Join Moltbook 🦞
-`);
-    }
-  });
-
-moltbookCmd
-  .command('status')
-  .description('Check your Moltbook account status')
-  .action(async () => {
-    const creds = loadCredentials();
-    
-    if (!creds?.api_key) {
-      console.log('❌ Not registered on Moltbook');
-      console.log('   Run "moltchain-agent moltbook register" to join!');
-      return;
-    }
-    
-    console.log('🦞 Checking Moltbook status...\n');
-    
-    const status = await checkClaimStatus(creds.api_key);
-    
-    console.log(`Agent Name: ${creds.agent_name || 'Unknown'}`);
-    console.log(`Status: ${status === 'claimed' ? '✅ Claimed & Active' : '⏳ Pending claim'}`);
-    
-    if (status !== 'claimed' && creds.claim_url) {
-      console.log(`\n👤 Send your human this link to claim:`);
-      console.log(`   ${creds.claim_url}`);
-    }
-  });
-
-moltbookCmd
-  .command('post')
-  .description('Post to Moltbook')
-  .option('-s, --submolt <name>', 'Submolt to post to', 'general')
-  .option('-t, --title <title>', 'Post title')
-  .option('-c, --content <content>', 'Post content')
-  .action(async (options) => {
-    const creds = loadCredentials();
-    
-    if (!creds?.api_key) {
-      console.log('❌ Not registered on Moltbook');
-      return;
-    }
-    
-    if (!options.title || !options.content) {
-      console.log('❌ Title and content required');
-      console.log('   Example: moltchain-agent moltbook post -t "Hello!" -c "My first post"');
-      return;
-    }
-    
-    console.log('🦞 Posting to Moltbook...');
-    
-    const result = await postToMoltbook(
-      creds.api_key,
-      options.submolt,
-      options.title,
-      options.content
-    );
-    
-    if (result.success) {
-      console.log('✅ Posted successfully!');
-      console.log(`   View at: https://www.moltbook.com/m/${options.submolt}`);
-    } else {
-      console.log('❌ Failed to post:', result.error);
-    }
-  });
-
-moltbookCmd
-  .command('feed')
-  .description('Check your Moltbook feed')
-  .option('-s, --sort <sort>', 'Sort by: hot, new, top', 'hot')
-  .option('-l, --limit <n>', 'Number of posts', '5')
-  .action(async (options) => {
-    const creds = loadCredentials();
-    
-    if (!creds?.api_key) {
-      console.log('❌ Not registered on Moltbook');
-      return;
-    }
-    
-    console.log('🦞 Fetching Moltbook feed...\n');
-    
-    const result = await getFeed(creds.api_key, options.sort, parseInt(options.limit));
-    
-    if (result.success && result.data?.length > 0) {
-      for (const post of result.data) {
-        console.log(`📝 ${post.title}`);
-        console.log(`   by ${post.author?.name || 'Unknown'} in m/${post.submolt?.name || 'general'}`);
-        console.log(`   ⬆️ ${post.upvotes || 0}  💬 ${post.comment_count || 0}`);
-        console.log('');
-      }
-    } else {
-      console.log('No posts found in feed');
     }
   });
 
@@ -547,7 +385,6 @@ daemonCmd
   .command('install')
   .description('Install agent as a system service')
   .option('-k, --keyfile <path>', 'Path to validator keypair file', './validator-key.json')
-  .option('--moltbook', 'Enable Moltbook social integration')
   .option('--auto-update', 'Enable automatic updates')
   .action(async (options) => {
     const platform = process.platform;
@@ -558,14 +395,13 @@ daemonCmd
     
     // Build the command args
     let args = ['start', '-k', keyfilePath];
-    if (options.moltbook) args.push('--moltbook');
     if (options.autoUpdate) args.push('--auto-update');
     
     if (platform === 'darwin') {
       // macOS: Use launchd
-      const plistName = 'com.moltchain.agent';
+      const plistName = 'com.smithnode.agent';
       const plistPath = path.join(process.env.HOME, 'Library', 'LaunchAgents', `${plistName}.plist`);
-      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'moltchain-agent.log');
+      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'smithnode-agent.log');
       
       const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -612,17 +448,17 @@ ${args.map(a => `        <string>${a}</string>`).join('\n')}
       console.log(`\n🚀 To start the daemon now, run:`);
       console.log(`   launchctl load ${plistPath}`);
       console.log(`\n📊 To check status:`);
-      console.log(`   launchctl list | grep moltchain`);
+      console.log(`   launchctl list | grep smithnode`);
       console.log(`\n🛑 To stop:`);
       console.log(`   launchctl unload ${plistPath}`);
       
     } else if (platform === 'linux') {
       // Linux: Use systemd
-      const serviceName = 'moltchain-agent';
+      const serviceName = 'smithnode-agent';
       const servicePath = path.join(process.env.HOME, '.config', 'systemd', 'user', `${serviceName}.service`);
       
       const serviceContent = `[Unit]
-Description=Moltchain AI Validator Agent
+Description=SmithNode AI Validator Agent
 After=network.target
 
 [Service]
@@ -668,7 +504,7 @@ cd /d "${agentDir}"
       console.log(`✅ Created startup script: ${batPath}`);
       console.log(`\n🚀 To auto-start on Windows:`);
       console.log(`   1. Open Task Scheduler (taskschd.msc)`);
-      console.log(`   2. Create Basic Task > "Moltchain Agent"`);
+      console.log(`   2. Create Basic Task > "SmithNode Agent"`);
       console.log(`   3. Trigger: "When the computer starts"`);
       console.log(`   4. Action: Start a program > "${batPath}"`);
       console.log(`   5. Check "Run whether user is logged on or not"`);
@@ -685,7 +521,7 @@ daemonCmd
     const platform = process.platform;
     
     if (platform === 'darwin') {
-      const plistPath = path.join(process.env.HOME, 'Library', 'LaunchAgents', 'com.moltchain.agent.plist');
+      const plistPath = path.join(process.env.HOME, 'Library', 'LaunchAgents', 'com.smithnode.agent.plist');
       
       if (fs.existsSync(plistPath)) {
         console.log('🛑 Unloading daemon...');
@@ -702,14 +538,14 @@ daemonCmd
       }
       
     } else if (platform === 'linux') {
-      const servicePath = path.join(process.env.HOME, '.config', 'systemd', 'user', 'moltchain-agent.service');
+      const servicePath = path.join(process.env.HOME, '.config', 'systemd', 'user', 'smithnode-agent.service');
       
       if (fs.existsSync(servicePath)) {
         console.log('🛑 Stopping and disabling daemon...');
         const { execSync } = await import('child_process');
         try {
-          execSync('systemctl --user stop moltchain-agent', { stdio: 'inherit' });
-          execSync('systemctl --user disable moltchain-agent', { stdio: 'inherit' });
+          execSync('systemctl --user stop smithnode-agent', { stdio: 'inherit' });
+          execSync('systemctl --user disable smithnode-agent', { stdio: 'inherit' });
         } catch (e) {
           // May fail if not running
         }
@@ -740,8 +576,8 @@ daemonCmd
     
     try {
       if (platform === 'darwin') {
-        const result = execSync('launchctl list | grep moltchain', { encoding: 'utf-8' });
-        if (result.includes('moltchain')) {
+        const result = execSync('launchctl list | grep smithnode', { encoding: 'utf-8' });
+        if (result.includes('smithnode')) {
           const parts = result.trim().split(/\s+/);
           const pid = parts[0];
           const status = parts[1];
@@ -750,7 +586,7 @@ daemonCmd
           console.log(`   Exit status: ${status}`);
         }
       } else if (platform === 'linux') {
-        execSync('systemctl --user status moltchain-agent', { stdio: 'inherit' });
+        execSync('systemctl --user status smithnode-agent', { stdio: 'inherit' });
       } else {
         console.log('ℹ️  Check Task Scheduler for status on Windows');
       }
@@ -769,7 +605,7 @@ daemonCmd
     const { spawn } = await import('child_process');
     
     if (platform === 'darwin') {
-      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'moltchain-agent.log');
+      const logPath = path.join(process.env.HOME, 'Library', 'Logs', 'smithnode-agent.log');
       if (fs.existsSync(logPath)) {
         const args = options.follow 
           ? ['-f', '-n', options.lines, logPath]
@@ -779,7 +615,7 @@ daemonCmd
         console.log('ℹ️  No logs found. Has the daemon started?');
       }
     } else if (platform === 'linux') {
-      const args = ['--user', '-u', 'moltchain-agent', '-n', options.lines];
+      const args = ['--user', '-u', 'smithnode-agent', '-n', options.lines];
       if (options.follow) args.push('-f');
       spawn('journalctl', args, { stdio: 'inherit' });
     } else {

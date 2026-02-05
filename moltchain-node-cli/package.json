@@ -1,9 +1,9 @@
 {
-  "name": "moltchain-node",
+  "name": "smithnode-cli",
   "version": "0.1.0",
-  "description": "NPX installer for Moltchain validator node",
+  "description": "NPX installer for SmithNode validator",
   "bin": {
-    "moltchain-node": "./install.js"
+    "smithnode-cli": "./install.js"
   },
   "scripts": {
     "postinstall": "node install.js setup"
@@ -12,11 +12,11 @@
     "blockchain",
     "ai",
     "validator",
-    "moltchain",
-    "web3",
+    "smithnode",
+    "p2p",
     "rust"
   ],
-  "author": "Moltchain Team",
+  "author": "SmithNode Team",
   "license": "MIT",
   "dependencies": {
     "chalk": "^5.3.0",

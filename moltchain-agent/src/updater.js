@@ -1,5 +1,5 @@
 /**
- * Auto-updater for Moltchain Agent
+ * Auto-updater for SmithNode Agent
  * 
  * Checks for new versions and updates automatically
  */
@@ -9,9 +9,9 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 
-const GITHUB_API = 'https://api.github.com/repos/sab4a/MOLTCHAIN/releases/latest';
-const NPM_REGISTRY = 'https://registry.npmjs.org/moltchain-agent';
-const DEVNET_RPC = 'https://moltchain-rpc.fly.dev';
+const GITHUB_API = 'https://api.github.com/repos/sab4a/SMITHSNT/releases/latest';
+const NPM_REGISTRY = 'https://registry.npmjs.org/smithnode-agent';
+const DEVNET_RPC = 'https://smithnode-rpc.fly.dev';
 
 /**
  * Get current installed version
@@ -31,7 +31,7 @@ export function getCurrentVersion() {
  */
 export async function getLatestVersion() {
   return new Promise((resolve, reject) => {
-    https.get(NPM_REGISTRY, { headers: { 'User-Agent': 'moltchain-agent' } }, (res) => {
+    https.get(NPM_REGISTRY, { headers: { 'User-Agent': 'smithnode-agent' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -98,12 +98,12 @@ export async function checkForUpdates(options = {}) {
  */
 export async function installUpdate(version, silent = false) {
   if (!silent) {
-    console.log(`\n⬇️ Installing moltchain-agent@${version}...`);
+    console.log(`\n⬇️ Installing smithnode-agent@${version}...`);
   }
   
   try {
     // Try npm global update
-    execSync('npm install -g moltchain-agent@latest', { 
+    execSync('npm install -g smithnode-agent@latest', { 
       stdio: silent ? 'ignore' : 'inherit' 
     });
     
@@ -116,7 +116,7 @@ export async function installUpdate(version, silent = false) {
   } catch (error) {
     if (!silent) {
       console.error('❌ Failed to install update:', error.message);
-      console.log('💡 Try manually: npm install -g moltchain-agent@latest');
+      console.log('💡 Try manually: npm install -g smithnode-agent@latest');
     }
     return { success: false, error: error.message };
   }
@@ -133,7 +133,7 @@ export async function getDevnetNodeVersion() {
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        method: 'moltchain_status',
+        method: 'smithnode_status',
         params: [],
       }),
     });
@@ -149,7 +149,7 @@ export async function getDevnetNodeVersion() {
  */
 export async function checkBinaryUpdates() {
   return new Promise((resolve) => {
-    https.get(GITHUB_API, { headers: { 'User-Agent': 'moltchain-agent' } }, (res) => {
+    https.get(GITHUB_API, { headers: { 'User-Agent': 'smithnode-agent' } }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -180,11 +180,11 @@ function getBinaryName() {
   const arch = process.arch;
   
   if (platform === 'darwin') {
-    return arch === 'arm64' ? 'moltchain-darwin-arm64' : 'moltchain-darwin-x64';
+    return arch === 'arm64' ? 'smithnode-darwin-arm64' : 'smithnode-darwin-x64';
   } else if (platform === 'linux') {
-    return arch === 'arm64' ? 'moltchain-linux-arm64' : 'moltchain-linux-x64';
+    return arch === 'arm64' ? 'smithnode-linux-arm64' : 'smithnode-linux-x64';
   } else if (platform === 'win32') {
-    return 'moltchain-windows-x64.exe';
+    return 'smithnode-windows-x64.exe';
   }
   return null;
 }
@@ -193,7 +193,7 @@ function getBinaryName() {
  * Get current binary version
  */
 export async function getCurrentBinaryVersion() {
-  const binaryPath = path.join(process.env.HOME || '', '.moltchain', 'bin', 'moltchain');
+  const binaryPath = path.join(process.env.HOME || '', '.smithnode', 'bin', 'smithnode');
   
   if (!fs.existsSync(binaryPath)) {
     return null;
@@ -224,9 +224,9 @@ export async function installBinaryUpdate(release, silent = false) {
     return { success: false, error: 'No binary for platform' };
   }
   
-  const binDir = path.join(process.env.HOME || '', '.moltchain', 'bin');
-  const binaryPath = path.join(binDir, 'moltchain');
-  const tempPath = path.join(binDir, 'moltchain.new');
+  const binDir = path.join(process.env.HOME || '', '.smithnode', 'bin');
+  const binaryPath = path.join(binDir, 'smithnode');
+  const tempPath = path.join(binDir, 'smithnode.new');
   
   // Ensure directory exists
   if (!fs.existsSync(binDir)) {
@@ -244,7 +244,7 @@ export async function installBinaryUpdate(release, silent = false) {
     const download = (url) => {
       https.get(url, { 
         headers: { 
-          'User-Agent': 'moltchain-agent',
+          'User-Agent': 'smithnode-agent',
           'Accept': 'application/octet-stream'
         } 
       }, (res) => {
@@ -397,7 +397,7 @@ this.checkInterval = options.checkInterval || 2 * 60 * 1000; // 2 minutes
         console.log('✅ Agent update installed!');
         needsRestart = true;
       } else if (!this.autoInstall) {
-        console.log('💡 Run "moltchain-agent update" to install');
+        console.log('💡 Run "smithnode-agent update" to install');
       }
     }
     
@@ -409,7 +409,7 @@ this.checkInterval = options.checkInterval || 2 * 60 * 1000; // 2 minutes
         console.log('✅ Binary update installed!');
         needsRestart = true;
       } else if (!this.autoInstall) {
-        console.log('💡 Run "moltchain-agent update" to install');
+        console.log('💡 Run "smithnode-agent update" to install');
       }
     }
     

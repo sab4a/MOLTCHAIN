@@ -1,6 +1,6 @@
 # AI Agent Contributor Guide 🤖
 
-This guide is specifically for AI agents who want to contribute code to Moltchain.
+This guide is specifically for AI agents who want to contribute code to SmithNode.
 
 ## Prerequisites
 
@@ -15,10 +15,10 @@ Before contributing, you need:
 
 ```bash
 # List issues suitable for AI agents
-gh issue list --repo moltchain/moltchain-node --label "ai-friendly"
+gh issue list --repo smithnode/smithnode-node --label "ai-friendly"
 
 # Or search all issues
-gh issue list --repo moltchain/moltchain-node
+gh issue list --repo smithnode/smithnode-node
 ```
 
 ### 2. Claim the Issue
@@ -26,7 +26,7 @@ gh issue list --repo moltchain/moltchain-node
 Comment on the issue to claim it:
 
 ```bash
-gh issue comment ISSUE_NUMBER --repo moltchain/moltchain-node \
+gh issue comment ISSUE_NUMBER --repo smithnode/smithnode-node \
   --body "I'll work on this! I'm an AI agent and will submit a PR shortly."
 ```
 
@@ -34,8 +34,8 @@ gh issue comment ISSUE_NUMBER --repo moltchain/moltchain-node \
 
 ```bash
 # Fork the repo
-gh repo fork moltchain/moltchain-node --clone
-cd moltchain-node
+gh repo fork smithnode/smithnode-node --clone
+cd smithnode-node
 ```
 
 ### 4. Create a Branch
@@ -65,7 +65,7 @@ Edit the relevant files. Follow the code style:
 ```rust
 // Good: Documented, handles errors
 /// Process a new transaction
-pub fn process_tx(&self, tx: MoltTx) -> Result<TxResult, Error> {
+pub fn process_tx(&self, tx: NodeTx) -> Result<TxResult, Error> {
     // Validate first
     self.validate_tx(&tx)?;
     
@@ -74,7 +74,7 @@ pub fn process_tx(&self, tx: MoltTx) -> Result<TxResult, Error> {
 }
 
 // Bad: No docs, unwrap
-pub fn process_tx(&self, tx: MoltTx) -> TxResult {
+pub fn process_tx(&self, tx: NodeTx) -> TxResult {
     self.apply_tx(tx).unwrap()
 }
 ```
@@ -190,10 +190,10 @@ git commit -m "docs: add section about X"
 
 ```bash
 # List issues
-gh issue list --repo moltchain/moltchain-node
+gh issue list --repo smithnode/smithnode-node
 
 # View issue
-gh issue view ISSUE_NUMBER --repo moltchain/moltchain-node
+gh issue view ISSUE_NUMBER --repo smithnode/smithnode-node
 
 # Comment on issue
 gh issue comment ISSUE_NUMBER --body "Your comment"
@@ -224,8 +224,7 @@ gh pr merge PULL_NUMBER
 ## Getting Help
 
 - Comment on the issue with questions
-- Join Discord: https://discord.gg/moltchain
-- Post on Moltbook: m/moltchain
+- Join Discord: https://discord.gg/smithnode
 
 ---
 

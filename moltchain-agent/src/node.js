@@ -1,5 +1,5 @@
 /**
- * Moltchain Embedded Node Manager
+ * SmithNode Embedded Node Manager
  * 
  * Each AI agent runs its own full node, making this a true P2P network.
  * If the "main" node goes down, other agents continue operating.
@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Platform-specific binary names
-const BINARY_NAME = process.platform === 'win32' ? 'moltchain.exe' : 'moltchain';
+const BINARY_NAME = process.platform === 'win32' ? 'smithnode.exe' : 'smithnode';
 
 // Default ports (will auto-increment if in use)
 const DEFAULT_RPC_PORT = 26658;
@@ -23,11 +23,11 @@ const DEFAULT_P2P_PORT = 26656;
 
 // Fly.io bootstrap node for network discovery
 // Dedicated IP: 50.31.246.124, P2P port: 26656
-// This is the main Moltchain devnet bootstrap node
+// This is the main SmithNode devnet bootstrap node
 const FLY_IO_BOOTSTRAP = '/ip4/50.31.246.124/tcp/26656';
 
 // Alternative: DNS-based address (resolves to same IP)
-const FLY_IO_BOOTSTRAP_DNS = '/dns4/moltchain-rpc.fly.dev/tcp/26656';
+const FLY_IO_BOOTSTRAP_DNS = '/dns4/smithnode-rpc.fly.dev/tcp/26656';
 
 // Bootstrap peers for network discovery
 const BOOTSTRAP_PEERS = [
@@ -39,7 +39,7 @@ const BOOTSTRAP_PEERS = [
 
 export class EmbeddedNode {
   constructor(options = {}) {
-    this.dataDir = options.dataDir || path.join(os.homedir(), '.moltchain');
+    this.dataDir = options.dataDir || path.join(os.homedir(), '.smithnode');
     this.rpcPort = options.rpcPort || DEFAULT_RPC_PORT;
     this.p2pPort = options.p2pPort || DEFAULT_P2P_PORT;
     // Merge user peers with default bootstrap peers
@@ -51,7 +51,7 @@ export class EmbeddedNode {
   }
 
   /**
-   * Find the moltchain binary
+   * Find the smithnode binary
    */
   findBinary() {
     const locations = [
@@ -60,7 +60,7 @@ export class EmbeddedNode {
       // Check in data directory
       path.join(this.dataDir, 'bin', BINARY_NAME),
       // Check global install
-      path.join(os.homedir(), '.moltchain', 'bin', BINARY_NAME),
+      path.join(os.homedir(), '.smithnode', 'bin', BINARY_NAME),
       // Check system PATH
       BINARY_NAME,
     ];
@@ -129,16 +129,16 @@ export class EmbeddedNode {
     const binary = this.findBinary();
     
     if (!binary) {
-      console.log('⚠️  Moltchain binary not found. Running in client-only mode.');
+      console.log('⚠️  SmithNode binary not found. Running in client-only mode.');
       console.log('   To run as a full peer, install the binary:');
-      console.log('   npx moltchain-node-cli install');
+      console.log('   npx smithnode-node-cli install');
       return false;
     }
 
     // Find available ports
     await this.findAvailablePorts();
 
-    console.log('🚀 Starting embedded Moltchain node...');
+    console.log('🚀 Starting embedded SmithNode node...');
     console.log(`   Binary: ${binary}`);
     console.log(`   RPC Port: ${this.rpcPort}`);
     console.log(`   P2P Port: ${this.p2pPort}`);
