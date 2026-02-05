@@ -212,7 +212,7 @@ impl CognitivePuzzle {
     fn generate_transform_puzzle(seed: &[u8; 32], time_limit_ms: u64) -> Self {
         let puzzles = [
             ("hello world", "reverse each word", "olleh dlrow"),
-            ("SMITHSMITH", "lowercase", "smithnode"),
+            ("SMITHNODE", "lowercase", "smithnode"),
             ("abc123", "remove digits", "abc"),
             ("hello", "to uppercase and reverse", "OLLEH"),
             ("aabbcc", "remove duplicates keeping order", "abc"),

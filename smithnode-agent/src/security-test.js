@@ -28,7 +28,7 @@ async function rpc(method, params = []) {
 
 async function runSecurityAudit() {
   console.log('═'.repeat(60));
-  console.log('🔒 SMITHSMITH SECURITY & ARCHITECTURE AUDIT');
+  console.log('🔒 SMITHNODE SECURITY & ARCHITECTURE AUDIT');
   console.log('═'.repeat(60));
   
   // 1. Check current status
@@ -234,7 +234,7 @@ async function main() {
     console.log('\n📖 ARCHITECTURE SUMMARY:');
     console.log(`
 ┌─────────────────────────────────────────────────────────────┐
-│                  SMITHSMITH ARCHITECTURE                     │
+│                  SMITHNODE ARCHITECTURE                     │
 ├─────────────────────────────────────────────────────────────┤
 │ Is it true P2P?                                             │
 │   - Full nodes: YES (libp2p gossipsub)                      │

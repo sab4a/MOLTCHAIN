@@ -209,7 +209,7 @@ class FullNodeAgent {
   async start() {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 SMITHSMITH FULL SMITH AGENT 🌐                          ║
+║     🌐 SMITHNODE FULL SMITH AGENT 🌐                          ║
 ║                                                              ║
 ║   TRUE P2P: Each agent IS a full node!                       ║
 ║   No central server - network survives if any node dies      ║

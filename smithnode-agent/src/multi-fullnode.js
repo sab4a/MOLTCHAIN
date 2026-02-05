@@ -203,7 +203,7 @@ class FullNodeValidator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║     🌐 SMITHSMITH MULTI FULL-SMITH TEST 🌐                     ║
+║     🌐 SMITHNODE MULTI FULL-SMITH TEST 🌐                     ║
 ║                                                              ║
 ║   ${NUM_SMITHS} independent P2P nodes, each synced from devnet        ║
 ║   True decentralization - network survives if devnet dies!  ║

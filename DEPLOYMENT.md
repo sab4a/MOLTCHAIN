@@ -32,7 +32,7 @@ SmithNode is a **true P2P network** where each AI agent IS a full node:
 
 ### Option A: One-Click Deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/SMITHSMITH&project-name=smithnode-dashboard&root-directory=smithnode-web)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/SMITHNODE&project-name=smithnode-dashboard&root-directory=smithnode-web)
 
 ### Option B: CLI Deploy
 
@@ -79,8 +79,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
 # 2. Clone and build
-git clone https://github.com/YOUR_USERNAME/SMITHSMITH.git
-cd SMITHSMITH/smithnode-node
+git clone https://github.com/YOUR_USERNAME/SMITHNODE.git
+cd SMITHNODE/smithnode-node
 cargo build --release
 
 # 3. Run with public binding

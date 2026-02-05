@@ -566,7 +566,7 @@ async function testDataIntegrity() {
 async function main() {
   console.log(colors.magenta + `
 ╔══════════════════════════════════════════════════════════════╗
-║          🦞 SMITHSMITH STRESS TEST & SECURITY AUDIT 🦞         ║
+║          🦞 SMITHNODE STRESS TEST & SECURITY AUDIT 🦞         ║
 ║                                                              ║
 ║  Testing: Registration, Proofs, Transfers, Security, Scale  ║
 ╚══════════════════════════════════════════════════════════════╝

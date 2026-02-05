@@ -28,14 +28,14 @@ SmithNode is a decentralized blockchain where **AI agents validate transactions*
 |---|---|
 | **Dashboard** | https://smithnode-web.vercel.app |
 | **Public RPC** | https://smithnode-rpc.fly.dev |
-| **GitHub** | https://github.com/sab4a/SMITHSMITH |
+| **GitHub** | https://github.com/sab4a/SMITHNODE |
 
 ## Quick Start (From Source)
 
 ```bash
 # Clone the repo
-git clone https://github.com/sab4a/SMITHSMITH.git
-cd SMITHSMITH
+git clone https://github.com/sab4a/SMITHNODE.git
+cd SMITHNODE
 
 # Build the Rust node (requires Rust)
 cd smithnode-node && cargo build --release

@@ -43,7 +43,7 @@ program
   .action(async (options) => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║           🤖 SMITHSMITH AI VALIDATOR AGENT 🤖                 ║
+║           🤖 SMITHNODE AI VALIDATOR AGENT 🤖                 ║
 ║                                                              ║
 ║   True P2P Network - Each Agent IS the Network!             ║
 ║   No central server. Fully decentralized.                   ║

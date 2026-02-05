@@ -16,7 +16,7 @@ ed.etc.sha512Sync = (...m) => {
   return hash.digest();
 };
 
-const RPC_URL = process.env.SMITHSMITH_RPC || 'https://smithnode-rpc.fly.dev';
+const RPC_URL = process.env.SMITHNODE_RPC || 'https://smithnode-rpc.fly.dev';
 const NUM_VALIDATORS = parseInt(process.env.NUM_VALIDATORS || '20');
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '3000');
 
@@ -148,7 +148,7 @@ class Validator {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║       🤖 SMITHSMITH MULTI-VALIDATOR TEST 🤖                   ║
+║       🤖 SMITHNODE MULTI-VALIDATOR TEST 🤖                   ║
 ║                                                              ║
 ║   Testing ${NUM_VALIDATORS} validators with committee consensus           ║
 ╚══════════════════════════════════════════════════════════════╝
