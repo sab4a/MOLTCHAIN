@@ -65,8 +65,8 @@ const TOPIC_BINARY_SEED: &str = "smithnode/binary-seed/1.0.0";
 ///   2. Falls back to the node operator's own key (from node_key.json)
 ///   3. Hardcoded keys below as ultimate fallback
 const HARDCODED_ADMIN_KEYS: &[&str] = &[
-    // Add your admin public key(s) here for production
-    // Example: "a1b2c3d4e5f6..." (64 hex chars)
+    // Network admin — signs upgrade announcements
+    "859eb85ed8d06e22ba3d43b68d4615e6c951769f62883f7e436e613949abcf7c",
 ];
 
 /// Get the list of trusted admin keys at runtime
