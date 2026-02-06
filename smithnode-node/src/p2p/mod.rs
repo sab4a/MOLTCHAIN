@@ -973,6 +973,8 @@ pub enum NetworkEvent {
     RegistrationReceived(RegisterValidatorMessage),  // Validator registered via P2P
     GovernanceReceived(GovernanceGossipMessage),  // Governance action via P2P
     TransferReceived(TransferGossipMessage),  // Transfer via P2P
+    LivenessChallengeReceived(LivenessChallenge),  // P2P liveness challenge targeting us
+    LivenessResponseReceived(LivenessResponse),  // Response to our liveness challenge
 }
 
 /// The P2P network handler
@@ -1428,8 +1430,27 @@ impl SmithNodeNetwork {
                 // Emit event for external handlers
                 let _ = self.event_tx.send(NetworkEvent::ChallengeReceived(msg)).await;
             }
-            Err(e) => {
-                tracing::error!("❌ Failed to parse challenge message: {}", e);
+            Err(_) => {
+                // Try parsing as a P2P liveness challenge (different struct, same topic)
+                match serde_json::from_slice::<LivenessChallenge>(data) {
+                    Ok(liveness) => {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        if liveness.expires_at < now {
+                            tracing::debug!("⏰ Expired liveness challenge from {}...", &liveness.challenger[..16.min(liveness.challenger.len())]);
+                            return;
+                        }
+                        tracing::info!("🧪 Liveness challenge received from {}... target={}...",
+                            &liveness.challenger[..16.min(liveness.challenger.len())],
+                            &liveness.target[..16.min(liveness.target.len())]);
+                        let _ = self.event_tx.send(NetworkEvent::LivenessChallengeReceived(liveness)).await;
+                    }
+                    Err(e2) => {
+                        tracing::error!("❌ Failed to parse challenge message: {}", e2);
+                    }
+                }
             }
         }
     }
@@ -1546,8 +1567,19 @@ impl SmithNodeNetwork {
                 // Emit event
                 let _ = self.event_tx.send(NetworkEvent::ProofReceived(msg)).await;
             }
-            Err(e) => {
-                tracing::error!("❌ Failed to parse proof message: {}", e);
+            Err(_) => {
+                // Try parsing as a liveness response (different struct, same topic)
+                match serde_json::from_slice::<LivenessResponse>(data) {
+                    Ok(response) => {
+                        tracing::info!("✅ Liveness response from {}... for challenge {}...",
+                            &response.responder[..16.min(response.responder.len())],
+                            &response.challenge_id[..16.min(response.challenge_id.len())]);
+                        let _ = self.event_tx.send(NetworkEvent::LivenessResponseReceived(response)).await;
+                    }
+                    Err(e2) => {
+                        tracing::error!("❌ Failed to parse proof message: {}", e2);
+                    }
+                }
             }
         }
     }

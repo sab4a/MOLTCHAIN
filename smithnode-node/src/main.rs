@@ -27,8 +27,8 @@ use crate::p2p::SmithNodeNetwork;
 //
 // These can be re-enabled for mainnet when there's actual value in AI discussions
 
-/// Built-in deterministic puzzle solver for validators without AI
-/// Handles simple puzzles (pattern, math, text transform) without needing an LLM
+/// Built-in deterministic puzzle solver (used for block challenge verification)
+/// Liveness challenges are solved by AI (required for all validators)
 fn builtin_solve_puzzle(puzzle: &stf::CognitivePuzzle) -> Option<String> {
     use stf::PuzzleType;
     
@@ -444,6 +444,14 @@ async fn main() -> anyhow::Result<()> {
                         p2p::NetworkEvent::TransferReceived(tx_msg) => {
                             tracing::debug!("💸 Transfer received via P2P: {} → {}", &tx_msg.from[..16.min(tx_msg.from.len())], &tx_msg.to[..16.min(tx_msg.to.len())]);
                         }
+                        p2p::NetworkEvent::LivenessChallengeReceived(challenge) => {
+                            tracing::debug!("🧪 Liveness challenge from {}... (Start mode — not participating)", 
+                                &challenge.challenger[..16.min(challenge.challenger.len())]);
+                        }
+                        p2p::NetworkEvent::LivenessResponseReceived(response) => {
+                            tracing::debug!("📬 Liveness response from {}... (Start mode)", 
+                                &response.responder[..16.min(response.responder.len())]);
+                        }
                     }
                 }
             });
@@ -844,7 +852,7 @@ async fn main() -> anyhow::Result<()> {
             let signing_key_clone = signing_key.clone();
             
             // Initialize AI client if configured
-            let ai_client: Option<ai::AIClient> = if let Some(ref provider) = ai_provider {
+            let ai_client: ai::AIClient = if let Some(ref provider) = ai_provider {
                 let config = match provider.to_lowercase().as_str() {
                     "ollama" => {
                         let mut config = ai::AIConfig::ollama(
@@ -900,17 +908,121 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
                 tracing::info!("🧠 AI solver enabled: provider={}, model={}", provider, config.model);
-                Some(ai::AIClient::new(config))
+                ai::AIClient::new(config)
             } else {
-                tracing::info!("🔧 No AI provider specified. Using built-in deterministic solver.");
-                tracing::info!("   Tip: Use --ai-provider ollama --ai-model llama2 for real AI solving");
-                None
+                tracing::error!("❌ AI provider is REQUIRED for SmithNode validators.");
+                tracing::error!("   SmithNode is an AI blockchain — every validator must have AI.");
+                tracing::error!("   Use: --ai-provider ollama --ai-model llama2  (free, local)");
+                tracing::error!("   Or:  --ai-provider openai --ai-api-key <key>");
+                tracing::error!("   Or:  --ai-provider anthropic --ai-api-key <key>");
+                tracing::error!("   Or:  --ai-provider groq --ai-api-key <key>  (free tier)");
+                std::process::exit(1);
             };
             
             // Spawn P2P validator loop — TURBO MODE
             // No more puzzle-solving for blocks. Instead:
             // 1. Heartbeats (keep active status for turbo block rewards)
             // 2. Async P2P liveness challenges (prove AI is running)
+            // 3. Auto-governance: vote on active proposals
+            
+            // Wrap AI client in Arc for sharing across tasks
+            let ai_client: std::sync::Arc<ai::AIClient> = std::sync::Arc::new(ai_client);
+            
+            // Clone network handle + state for governance loop
+            let state_for_gov = state.clone();
+            let pubkey_for_gov = public_key_hex.to_string();
+            let signer_for_gov = signing_key.clone();
+            let network_for_gov = network_handle.clone();
+            let ai_for_gov = ai_client.clone();
+            
+            // Auto-governance loop: check active proposals and vote every 45 seconds
+            let governance_handle = tokio::spawn(async move {
+                let mut voted_proposals: std::collections::HashSet<u64> = std::collections::HashSet::new();
+                let mut last_gov_check = std::time::Instant::now();
+                
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    
+                    if last_gov_check.elapsed() < std::time::Duration::from_secs(45) {
+                        continue;
+                    }
+                    last_gov_check = std::time::Instant::now();
+                    
+                    let active = state_for_gov.get_active_proposals();
+                    if active.is_empty() {
+                        continue;
+                    }
+                    
+                    for proposal in &active {
+                        if voted_proposals.contains(&proposal.id) {
+                            continue;
+                        }
+                        // Skip if already voted (might have happened via gossip)
+                        if proposal.votes.iter().any(|v| v.voter == pubkey_for_gov) {
+                            voted_proposals.insert(proposal.id);
+                            continue;
+                        }
+                        
+                        let now_ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        
+                        // Don't vote on expired proposals
+                        if now_ts >= proposal.voting_ends_at {
+                            continue;
+                        }
+                        
+                        // Default: approve reasonable proposals. 
+                        // AI agents can analyze the proposal if AI is available
+                        let (vote_decision, reason) = match ai_for_gov.solve_puzzle(&format!(
+                            "Governance proposal #{}: type={:?}, proposed new_value. \
+                            Should this parameter change be approved? \
+                            Reply with just 'YES' or 'NO' followed by a brief reason.",
+                            proposal.id, proposal.proposal_type
+                        )).await {
+                            Ok(answer) => {
+                                let lower = answer.to_lowercase();
+                                let approve = !lower.starts_with("no");
+                                (approve, Some(answer))
+                            }
+                            Err(_) => (true, Some("Auto-approved by AI validator".to_string()))
+                        };
+                        
+                        // Sign the vote: proposal_id || vote_bool
+                        let mut sig_msg = Vec::new();
+                        sig_msg.extend_from_slice(&proposal.id.to_le_bytes());
+                        sig_msg.push(if vote_decision { 1 } else { 0 });
+                        let sig: Signature = signer_for_gov.sign(&sig_msg);
+                        
+                        let gov_msg = p2p::GovernanceGossipMessage {
+                            action: p2p::GovernanceAction::CastVote {
+                                voter: pubkey_for_gov.clone(),
+                                proposal_id: proposal.id,
+                                vote: vote_decision,
+                                signature: hex::encode(sig.to_bytes()),
+                                reason,
+                            },
+                            timestamp: now_ts,
+                        };
+                        
+                        if let Err(e) = network_for_gov.broadcast_governance(gov_msg).await {
+                            tracing::warn!("Failed to broadcast governance vote: {}", e);
+                        } else {
+                            tracing::info!("🗳️  Auto-voted {} on proposal #{}", 
+                                if vote_decision { "YES" } else { "NO" }, proposal.id);
+                            voted_proposals.insert(proposal.id);
+                        }
+                    }
+                    
+                    // Prune old voted proposals (keep set small)
+                    if voted_proposals.len() > 100 {
+                        let active_ids: std::collections::HashSet<u64> = active.iter().map(|p| p.id).collect();
+                        voted_proposals.retain(|id| active_ids.contains(id));
+                    }
+                }
+            });
+            
             let validator_handle = tokio::spawn(async move {
                 let mut last_heartbeat = std::time::Instant::now();
                 let mut last_liveness_challenge = std::time::Instant::now();
@@ -1023,8 +1135,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             });
             
-            // Spawn network event handler (same as Start command)
+            // Spawn network event handler — AUTO-SOLVE liveness challenges
             let state_for_events = state.clone();
+            let ai_for_events = ai_client.clone();
+            let pubkey_for_events = public_key_hex.to_string();
+            let signer_for_events = signing_key.clone();
+            let network_for_events = network_handle.clone();
             let event_handler = tokio::spawn(async move {
                 while let Some(event) = event_rx.recv().await {
                     match event {
@@ -1042,6 +1158,58 @@ async fn main() -> anyhow::Result<()> {
                         }
                         p2p::NetworkEvent::PeerDisconnected(peer_id) => {
                             tracing::info!("👋 Peer disconnected: {}", peer_id);
+                        }
+                        p2p::NetworkEvent::LivenessChallengeReceived(challenge) => {
+                            // Only respond if WE are the target
+                            if challenge.target != pubkey_for_events {
+                                tracing::debug!("🧪 Liveness challenge for someone else, ignoring");
+                                continue;
+                            }
+                            
+                            tracing::info!("🧠 Liveness challenge targeting US from {}... — solving...",
+                                &challenge.challenger[..16.min(challenge.challenger.len())]);
+                            
+                            // Solve with AI — every validator has AI (required at startup)
+                            let answer: Option<String> = match ai_for_events.solve_puzzle(&challenge.puzzle_prompt).await {
+                                Ok(ans) => {
+                                    tracing::info!("🤖 AI solved liveness puzzle: {:?}", &ans[..ans.len().min(50)]);
+                                    Some(ans)
+                                }
+                                Err(e) => {
+                                    tracing::warn!("🤖 AI failed to solve puzzle: {}", e);
+                                    None
+                                }
+                            };
+                            
+                            if let Some(answer) = answer {
+                                // Sign the response
+                                let mut sig_msg = Vec::new();
+                                sig_msg.extend_from_slice(challenge.challenge_id.as_bytes());
+                                sig_msg.extend_from_slice(answer.as_bytes());
+                                let sig: Signature = signer_for_events.sign(&sig_msg);
+                                
+                                let response = p2p::LivenessResponse {
+                                    challenge_id: challenge.challenge_id.clone(),
+                                    responder: pubkey_for_events.clone(),
+                                    answer,
+                                    signature: hex::encode(sig.to_bytes()),
+                                };
+                                
+                                if let Err(e) = network_for_events.broadcast_liveness_response(response).await {
+                                    tracing::warn!("Failed to send liveness response: {}", e);
+                                } else {
+                                    tracing::info!("✅ Liveness response sent for challenge {}...", 
+                                        &challenge.challenge_id[..16.min(challenge.challenge_id.len())]);
+                                }
+                            } else {
+                                tracing::warn!("❌ Could not solve liveness puzzle: {}", 
+                                    &challenge.puzzle_prompt[..80.min(challenge.puzzle_prompt.len())]);
+                            }
+                        }
+                        p2p::NetworkEvent::LivenessResponseReceived(response) => {
+                            tracing::info!("📬 Liveness response from {}... (challenge {}...)", 
+                                &response.responder[..16.min(response.responder.len())],
+                                &response.challenge_id[..16.min(response.challenge_id.len())]);
                         }
                         p2p::NetworkEvent::StateReceived(state_msg) => {
                             tracing::info!("📥 State sync: height={}", state_msg.height);
@@ -1499,6 +1667,7 @@ async fn main() -> anyhow::Result<()> {
                 _ = p2p_handle => {}
                 _ = event_handler => {}
                 _ = validator_handle => {}
+                _ = governance_handle => {}
                 _ = auto_update_handle => {}
             }
 

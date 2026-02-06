@@ -65,7 +65,7 @@ pub enum Commands {
         rpc_bind: Option<String>,
         
         /// AI provider for cognitive challenges: ollama, openai, anthropic, groq, together
-        /// If not provided, uses built-in deterministic solver (no AI)
+        /// REQUIRED — SmithNode is an AI blockchain, every validator must have AI
         #[arg(long)]
         ai_provider: Option<String>,
         
