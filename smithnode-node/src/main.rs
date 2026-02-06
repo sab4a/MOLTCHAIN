@@ -1045,6 +1045,7 @@ async fn main() -> anyhow::Result<()> {
             let validator_handle = tokio::spawn(async move {
                 let mut last_heartbeat = std::time::Instant::now();
                 let mut last_liveness_challenge = std::time::Instant::now();
+                let mut last_upgrade_rebroadcast = std::time::Instant::now();
                 
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1150,6 +1151,20 @@ async fn main() -> anyhow::Result<()> {
                         }
                         
                         last_liveness_challenge = std::time::Instant::now();
+                    }
+                    
+                    // Re-broadcast stored upgrade announcement every 60s
+                    // This ensures peers that missed the initial gossipsub message get it
+                    if last_upgrade_rebroadcast.elapsed() > std::time::Duration::from_secs(60) {
+                        let tracker = p2p::get_version_tracker();
+                        if let Some(upgrade) = tracker.get_latest_upgrade() {
+                            // Only re-broadcast if the upgrade is for a newer version
+                            if upgrade.version != p2p::SMITH_VERSION {
+                                tracing::debug!("📦 Re-broadcasting upgrade v{} to P2P mesh", upgrade.version);
+                                let _ = network_handle_for_validator.broadcast_upgrade(upgrade).await;
+                            }
+                        }
+                        last_upgrade_rebroadcast = std::time::Instant::now();
                     }
                 }
             });

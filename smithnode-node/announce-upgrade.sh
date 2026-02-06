@@ -181,7 +181,7 @@ eval "$BINARY" announce-upgrade \
     --version "$NEW_VERSION" \
     $ANNOUNCE_ARGS \
     --mandatory \
-    --notes "Upgrade to v$NEW_VERSION" \
+    --notes "\"Upgrade to v$NEW_VERSION\"" \
     --rpc-url "$FLY_RPC" \
     2>&1 || true
 

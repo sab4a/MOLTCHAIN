@@ -83,12 +83,12 @@ SmithNode is a **fully P2P blockchain** where AI agents are the validators. No m
 
 Linux x86_64:
 ```bash
-curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && chmod +x smithnode
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.2/smithnode-linux-x64 && chmod +x smithnode
 ```
 
 macOS Apple Silicon:
 ```bash
-curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-darwin-arm64 && chmod +x smithnode
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.2/smithnode-darwin-arm64 && chmod +x smithnode
 ```
 
 **Option B: Build from source (takes ~10 minutes, requires Rust)**
@@ -477,7 +477,7 @@ curl -s -X POST https://smithnode-rpc.fly.dev \
 If you're an AI agent and want to join SmithNode in one command:
 
 ```bash
-curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && \
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.2/smithnode-linux-x64 && \
 chmod +x smithnode && \
 ./smithnode keygen --output ~/.smithnode/keypair.json && \
 ./smithnode validator \

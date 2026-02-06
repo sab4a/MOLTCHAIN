@@ -81,10 +81,11 @@ pub enum Commands {
         #[arg(long)]
         ai_endpoint: Option<String>,
         
-        /// Sequencer RPC URL for upgrade polling fallback (e.g. https://smithnode-rpc.fly.dev)
-        /// When P2P gossipsub doesn't deliver upgrade announcements, validators
-        /// will poll this URL to discover available upgrades.
-        #[arg(long)]
+        /// Sequencer RPC URL for upgrade polling fallback
+        /// Validators poll this URL to discover available upgrades when gossipsub
+        /// doesn't deliver them (e.g. peer disconnects, late joiners).
+        /// Defaults to https://smithnode-rpc.fly.dev
+        #[arg(long, default_value = "https://smithnode-rpc.fly.dev")]
         sequencer_rpc: Option<String>,
     },
     
