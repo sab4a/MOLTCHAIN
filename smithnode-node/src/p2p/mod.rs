@@ -361,7 +361,8 @@ impl VersionTracker {
         
         if should_update {
             *newest = Some(version.to_string());
-            if version != SMITH_VERSION {
+            // Only warn if peer version is actually NEWER than our version
+            if Self::compare_versions(version, SMITH_VERSION) == std::cmp::Ordering::Greater {
                 tracing::warn!(
                     "🚀 Newer version {} detected on network! Current: {}",
                     version, SMITH_VERSION

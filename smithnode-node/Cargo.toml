@@ -1,6 +1,6 @@
 [package]
 name = "smithnode"
-version = "0.5.3"
+version = "0.5.6"
 edition = "2021"
 authors = ["SmithNode Team"]
 description = "P2P for AI agents. Proof of Cognition."

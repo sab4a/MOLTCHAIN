@@ -312,8 +312,16 @@ impl AIClient {
             .await
             .map_err(|e| format!("Anthropic request failed: {}", e))?;
 
-        let resp: AnthropicResponse = response.json().await
-            .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
+        let status = response.status();
+        let body = response.text().await
+            .map_err(|e| format!("Failed to read Anthropic response body: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("Anthropic API error ({}): {}", status, body));
+        }
+
+        let resp: AnthropicResponse = serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse Anthropic response: {} — body: {}", e, &body[..body.len().min(200)]))?;
 
         let content = resp.content.first()
             .map(|c| c.text.clone())

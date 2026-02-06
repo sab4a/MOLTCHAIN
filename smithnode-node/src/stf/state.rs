@@ -353,7 +353,7 @@ impl SmithNodeState {
             .unwrap_or_default()
             .as_secs();
         
-        // Get active validators (collect to owned Vec to avoid borrow conflict)
+        // Get ALL active validators (for tracking/display)
         let active_validators: Vec<String> = inner.validators.iter()
             .filter(|(_, v)| {
                 let time_since_active = now.saturating_sub(v.last_active_timestamp);
@@ -369,14 +369,42 @@ impl SmithNodeState {
         // Save previous state root BEFORE any mutations
         let prev_state_root = inner.state_root;
         
-        // Distribute reward equally among active validators
-        let reward_per_proof = inner.governance.params.reward_per_proof;
-        let num_active = active_validators.len() as u64;
-        let reward_each = reward_per_proof / num_active.max(1);
+        // Use a deterministic seed for committee selection based on state
+        let committee_seed: [u8; 32] = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"committee_seed");
+            hasher.update(&prev_state_root);
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.finalize().into()
+        };
         
-        // Give each active validator their share (active_validators is owned, so no borrow conflict)
+        // Select committee: reputation-weighted subset of active validators
+        // Uses governance param committee_size (default: 5)
+        let committee = Self::select_committee_from_inner(&inner, &committee_seed);
+        
+        // If committee selection returned empty (shouldn't happen since we have active validators),
+        // fall back to all active validators
+        let rewarded_validators = if committee.is_empty() {
+            tracing::warn!("⚠️ Committee selection returned empty, falling back to all active validators");
+            active_validators.clone()
+        } else {
+            tracing::info!(
+                "👥 Block {} committee: {}/{} active validators selected (reputation-weighted)",
+                inner.height + 1,
+                committee.len(),
+                active_validators.len()
+            );
+            committee
+        };
+        
+        // Distribute reward equally among COMMITTEE members only
+        let reward_per_proof = inner.governance.params.reward_per_proof;
+        let num_committee = rewarded_validators.len() as u64;
+        let reward_each = reward_per_proof / num_committee.max(1);
+        
+        // Give each committee member their share
         let next_height = inner.height + 1;
-        for pubkey in active_validators.iter() {
+        for pubkey in rewarded_validators.iter() {
             if let Some(v) = inner.validators.get_mut(pubkey) {
                 v.balance += reward_each;
                 v.validations_count += 1;
@@ -384,7 +412,7 @@ impl SmithNodeState {
             }
         }
         
-        let total_reward = reward_each * num_active;
+        let total_reward = reward_each * num_committee;
         inner.total_supply += total_reward;
         
         // Compute challenge hash (deterministic — NO timestamp, only state data)
@@ -409,13 +437,13 @@ impl SmithNodeState {
         inner.tx_records.push(TxRecord {
             hash: tx_hash,
             tx_type: "block".to_string(),
-            from: active_validators.first().cloned().unwrap_or_default(),
+            from: rewarded_validators.first().cloned().unwrap_or_default(),
             to: None,
             amount: total_reward,
             status: "confirmed".to_string(),
             timestamp: now,
             height: current_height + 1,
-            validators: Some(active_validators),
+            validators: Some(rewarded_validators),
             challenge_hash: Some(hex::encode(challenge_hash)),
         });
         
@@ -480,6 +508,65 @@ impl SmithNodeState {
                 }
             }
         }
+    }
+
+    /// Select committee members based on reputation-weighted random selection (static version)
+    /// Doesn't take &self — safe to call while holding a write lock on inner
+    fn select_committee_from_inner(inner: &StateInner, seed: &[u8; 32]) -> Vec<String> {
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Filter to only ACTIVE validators (online in last 5 minutes)
+        let validators: Vec<_> = inner.validators.iter()
+            .filter(|(_, v)| {
+                let time_since_active = current_time.saturating_sub(v.last_active_timestamp);
+                time_since_active <= ACTIVE_THRESHOLD_SECS
+            })
+            .collect();
+        
+        if validators.is_empty() {
+            return Vec::new();
+        }
+        
+        // Use governance params for committee size
+        let governed_committee_size = inner.governance.params.committee_size;
+        let committee_size = governed_committee_size.min(validators.len());
+        let mut selected: Vec<String> = Vec::with_capacity(committee_size);
+        let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        
+        // Use seed for deterministic random selection
+        let mut rng_state = u64::from_le_bytes(seed[0..8].try_into().unwrap());
+        
+        for _ in 0..committee_size {
+            let available_weight: u64 = validators.iter().enumerate()
+                .filter(|(idx, _)| !used_indices.contains(idx))
+                .map(|(_, (_, v))| v.reputation_score.max(1))
+                .sum();
+            
+            if available_weight == 0 {
+                break;
+            }
+            
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let rand_val = rng_state % available_weight;
+            
+            let mut cumulative: u64 = 0;
+            for (idx, (pubkey, validator)) in validators.iter().enumerate() {
+                if used_indices.contains(&idx) {
+                    continue;
+                }
+                cumulative += validator.reputation_score.max(1);
+                if cumulative > rand_val {
+                    selected.push(pubkey.to_string());
+                    used_indices.insert(idx);
+                    break;
+                }
+            }
+        }
+        
+        selected
     }
 
     /// Select committee members based on reputation-weighted random selection
@@ -1778,17 +1865,18 @@ impl SmithNodeState {
     ) -> Result<(), String> {
         let mut inner = self.inner.write_or_recover();
         
-        // Verify block height is strictly sequential
-        if header.height != inner.height + 1 {
-            // Allow at most 10 blocks ahead for catch-up sync
-            if header.height > inner.height + 1 && header.height <= inner.height + 10 {
-                tracing::info!("🔄 Block {} is ahead of our height {} — catch-up sync", header.height, inner.height);
-            } else {
-                return Err(format!(
-                    "Block height {} is not sequential (our height: {})",
-                    header.height, inner.height
-                ));
-            }
+        // Accept blocks that advance our chain
+        if header.height <= inner.height {
+            return Err(format!(
+                "Block height {} is not newer than our height {}",
+                header.height, inner.height
+            ));
+        }
+        if header.height > inner.height + 1 {
+            tracing::info!(
+                "🔄 Catching up: jumping from height {} → {} (skipping {} blocks)",
+                inner.height, header.height, header.height - inner.height - 1
+            );
         }
         
         // Apply block height
