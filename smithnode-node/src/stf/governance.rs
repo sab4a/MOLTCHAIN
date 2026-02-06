@@ -622,6 +622,7 @@ mod tests {
             stake_weight: 1000,
             timestamp: now,
             signature: "00".repeat(64), // 64 bytes as hex = 128 chars
+            reason: None,
         }).unwrap();
         
         proposal.add_vote(Vote {
@@ -630,6 +631,7 @@ mod tests {
             stake_weight: 500,
             timestamp: now,
             signature: "00".repeat(64),
+            reason: None,
         }).unwrap();
         
         proposal.add_vote(Vote {
@@ -638,6 +640,7 @@ mod tests {
             stake_weight: 200,
             timestamp: now,
             signature: "00".repeat(64),
+            reason: None,
         }).unwrap();
         
         // Check result (total stake = 2000 for quorum)

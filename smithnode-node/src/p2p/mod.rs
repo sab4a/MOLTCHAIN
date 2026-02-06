@@ -50,18 +50,58 @@ const TOPIC_PROOFS: &str = "smithnode/proofs/1.0.0";
 const TOPIC_BLOCKS: &str = "smithnode/blocks/1.0.0";
 const TOPIC_STATE_SYNC: &str = "smithnode/state-sync/1.0.0";
 const TOPIC_PRESENCE: &str = "smithnode/presence/1.0.0";
-const TOPIC_UPGRADES: &str = "smithnode/upgrades/1.0.0";
+pub const TOPIC_UPGRADES: &str = "smithnode/upgrades/1.0.0";
 const TOPIC_AI_MESSAGES: &str = "smithnode/ai-messages/1.0.0";
 const TOPIC_TRANSACTIONS: &str = "smithnode/transactions/1.0.0";
 const TOPIC_GOVERNANCE: &str = "smithnode/governance/1.0.0";
+const TOPIC_BINARY_SEED: &str = "smithnode/binary-seed/1.0.0";
 
 /// Trusted admin public keys for upgrade announcements
 /// These are the ONLY keys that can announce valid upgrades
 /// Format: hex-encoded Ed25519 public keys (32 bytes = 64 hex chars)
-const TRUSTED_ADMIN_KEYS: &[&str] = &[
-    // Add your admin public key(s) here
+/// 
+/// Loaded dynamically from:
+///   1. SMITHNODE_ADMIN_KEYS env var (comma-separated hex pubkeys)
+///   2. Falls back to the node operator's own key (from node_key.json)
+///   3. Hardcoded keys below as ultimate fallback
+const HARDCODED_ADMIN_KEYS: &[&str] = &[
+    // Add your admin public key(s) here for production
     // Example: "a1b2c3d4e5f6..." (64 hex chars)
 ];
+
+/// Get the list of trusted admin keys at runtime
+fn get_trusted_admin_keys() -> Vec<String> {
+    let mut keys: Vec<String> = HARDCODED_ADMIN_KEYS.iter().map(|k| k.to_string()).collect();
+    
+    // Load from environment variable
+    if let Ok(env_keys) = std::env::var("SMITHNODE_ADMIN_KEYS") {
+        for key in env_keys.split(',') {
+            let key = key.trim().to_string();
+            if key.len() == 64 && hex::decode(&key).is_ok() {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+    }
+    
+    // Load from node_key.json in data dir (the node operator trusts themselves)
+    let data_dir = std::env::var("SMITHNODE_DATA_DIR")
+        .unwrap_or_else(|_| ".smithnode-data".to_string());
+    let node_key_path = std::path::Path::new(&data_dir).join("node_key.json");
+    if let Ok(data) = std::fs::read_to_string(&node_key_path) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&data) {
+            if let Some(pubkey) = parsed["public_key"].as_str() {
+                let pubkey = pubkey.to_string();
+                if pubkey.len() == 64 && !keys.contains(&pubkey) {
+                    keys.push(pubkey);
+                }
+            }
+        }
+    }
+    
+    keys
+}
 
 /// Tracks validators that have been VERIFIED via P2P gossipsub
 /// These are TRUE P2P validators, not just RPC agents
@@ -644,13 +684,61 @@ pub struct UpgradeChecksums {
     pub windows_x64: Option<String>,
 }
 
+/// P2P Binary Seed Announcement — after a peer downloads the upgrade binary,
+/// it announces itself as a seed so other peers can download from it via P2P
+/// instead of requiring external HTTP access.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BinarySeedAnnouncement {
+    /// Version being seeded
+    pub version: String,
+    /// Platform this seed has (e.g. "darwin_arm64", "linux_x64")
+    pub platform: String,
+    /// URL where the binary can be downloaded from this peer (e.g. http://peer-ip:port/binary)
+    pub seed_url: String,
+    /// SHA256 checksum of the binary
+    pub checksum: String,
+    /// Peer ID of the seeder
+    pub peer_id: String,
+    /// Timestamp
+    pub timestamp: u64,
+}
+
+/// Global binary seed tracker — collects seed announcements from peers
+static BINARY_SEEDS: std::sync::OnceLock<Arc<RwLock<Vec<BinarySeedAnnouncement>>>> = std::sync::OnceLock::new();
+
+pub fn get_binary_seeds() -> &'static Arc<RwLock<Vec<BinarySeedAnnouncement>>> {
+    BINARY_SEEDS.get_or_init(|| Arc::new(RwLock::new(Vec::new())))
+}
+
+/// Record a binary seed from a peer
+pub fn record_binary_seed(seed: BinarySeedAnnouncement) {
+    let seeds = get_binary_seeds();
+    let mut list = seeds.write_or_recover();
+    // Don't duplicate
+    if !list.iter().any(|s| s.peer_id == seed.peer_id && s.version == seed.version && s.platform == seed.platform) {
+        tracing::info!("🌱 New binary seed: peer {} has v{} for {}", &seed.peer_id[..12.min(seed.peer_id.len())], seed.version, seed.platform);
+        list.push(seed);
+    }
+}
+
+/// Get seed URLs for a specific version and platform
+pub fn get_seed_urls(version: &str, platform: &str) -> Vec<String> {
+    let seeds = get_binary_seeds();
+    let list = seeds.read_or_recover();
+    list.iter()
+        .filter(|s| s.version == version && s.platform == platform)
+        .map(|s| s.seed_url.clone())
+        .collect()
+}
+
 impl UpgradeAnnouncement {
     /// Verify the signature AND check it's from a trusted admin
     pub fn verify(&self) -> bool {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         
-        // Check if admin is in trusted list
-        if !TRUSTED_ADMIN_KEYS.contains(&self.admin_pubkey.as_str()) {
+        // Check if admin is in trusted list (dynamic lookup)
+        let trusted_keys = get_trusted_admin_keys();
+        if !trusted_keys.iter().any(|k| k == &self.admin_pubkey) {
             tracing::warn!("Upgrade from untrusted admin: {}...", &self.admin_pubkey[..16.min(self.admin_pubkey.len())]);
             return false;
         }
@@ -751,6 +839,8 @@ pub enum NetworkCommand {
     BroadcastRegistration(RegisterValidatorMessage),  // Validator registration via P2P
     BroadcastGovernance(GovernanceGossipMessage),  // Governance proposals/votes via P2P
     BroadcastTransfer(TransferGossipMessage),  // Transfer broadcast via P2P
+    BroadcastUpgrade(UpgradeAnnouncement),  // Upgrade announcement via P2P
+    BroadcastBinarySeed(BinarySeedAnnouncement),  // "I have the binary, download from me"
 }
 
 /// P2P liveness challenge — validators quiz each other asynchronously
@@ -897,6 +987,7 @@ pub struct SmithNodeNetwork {
     ai_message_topic: IdentTopic,  // AI-to-AI communication
     transaction_topic: IdentTopic,  // Transaction/registration broadcast
     governance_topic: IdentTopic,  // Governance proposals/votes broadcast
+    binary_seed_topic: IdentTopic,  // P2P binary distribution seed announcements
     local_peer_id: String,
     state: SmithNodeState,
     command_rx: mpsc::Receiver<NetworkCommand>,
@@ -987,6 +1078,18 @@ impl NetworkHandle {
     /// Broadcast a liveness challenge response
     pub async fn broadcast_liveness_response(&self, response: LivenessResponse) -> anyhow::Result<()> {
         self.command_tx.send(NetworkCommand::BroadcastLivenessResponse(response)).await?;
+        Ok(())
+    }
+    
+    /// Broadcast an upgrade announcement to the network
+    pub async fn broadcast_upgrade(&self, announcement: UpgradeAnnouncement) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::BroadcastUpgrade(announcement)).await?;
+        Ok(())
+    }
+    
+    /// Broadcast that we have the binary and can seed it to peers
+    pub async fn broadcast_binary_seed(&self, seed: BinarySeedAnnouncement) -> anyhow::Result<()> {
+        self.command_tx.send(NetworkCommand::BroadcastBinarySeed(seed)).await?;
         Ok(())
     }
 }
@@ -1105,6 +1208,7 @@ impl SmithNodeNetwork {
         let ai_message_topic = IdentTopic::new(TOPIC_AI_MESSAGES);
         let transaction_topic = IdentTopic::new(TOPIC_TRANSACTIONS);
         let governance_topic = IdentTopic::new(TOPIC_GOVERNANCE);
+        let binary_seed_topic = IdentTopic::new(TOPIC_BINARY_SEED);
         
         // Subscribe to topics
         swarm.behaviour_mut().gossipsub.subscribe(&challenge_topic)?;
@@ -1116,6 +1220,7 @@ impl SmithNodeNetwork {
         swarm.behaviour_mut().gossipsub.subscribe(&ai_message_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&transaction_topic)?;
         swarm.behaviour_mut().gossipsub.subscribe(&governance_topic)?;
+        swarm.behaviour_mut().gossipsub.subscribe(&binary_seed_topic)?;
         
         // Listen on all interfaces
         let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", port).parse()?;
@@ -1136,6 +1241,7 @@ impl SmithNodeNetwork {
             ai_message_topic,
             transaction_topic,
             governance_topic,
+            binary_seed_topic,
             local_peer_id: local_peer_id.to_string(),
             state,
             command_rx,
@@ -1260,6 +1366,9 @@ impl SmithNodeNetwork {
                     }
                     TOPIC_GOVERNANCE => {
                         self.handle_governance_message(&message.data).await;
+                    }
+                    TOPIC_BINARY_SEED => {
+                        self.handle_binary_seed_message(&message.data).await;
                     }
                     _ => {}
                 }
@@ -1787,6 +1896,35 @@ impl SmithNodeNetwork {
                     }
                 }
             }
+            NetworkCommand::BroadcastUpgrade(announcement) => {
+                tracing::info!("📦 Broadcasting upgrade v{} via P2P", announcement.version);
+                if let Ok(data) = serde_json::to_vec(&announcement) {
+                    let upgrade_topic = libp2p::gossipsub::IdentTopic::new(TOPIC_UPGRADES);
+                    if let Err(e) = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(upgrade_topic, data)
+                    {
+                        tracing::warn!("Failed to broadcast upgrade: {}", e);
+                    } else {
+                        tracing::info!("📢 Upgrade v{} broadcasted to P2P network", announcement.version);
+                    }
+                }
+            }
+            NetworkCommand::BroadcastBinarySeed(seed) => {
+                tracing::info!("🌱 Broadcasting binary seed: v{} for {} at {}", seed.version, seed.platform, seed.seed_url);
+                if let Ok(data) = serde_json::to_vec(&seed) {
+                    if let Err(e) = self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(self.binary_seed_topic.clone(), data)
+                    {
+                        tracing::warn!("Failed to broadcast binary seed: {}", e);
+                    } else {
+                        tracing::info!("📢 Binary seed broadcasted to P2P network");
+                    }
+                }
+            }
             NetworkCommand::BroadcastTurboBlock(height, prev_state_root, state_root, challenge_hash, total_supply) => {
                 // Build block message for turbo mode with proper verification data
                 let block = BlockHeader {
@@ -2038,6 +2176,25 @@ impl SmithNodeNetwork {
             }
             Err(e) => {
                 tracing::debug!("Failed to parse upgrade message: {}", e);
+            }
+        }
+    }
+    
+    /// Handle incoming binary seed announcement — a peer has the upgrade binary
+    async fn handle_binary_seed_message(&mut self, data: &[u8]) {
+        match serde_json::from_slice::<BinarySeedAnnouncement>(data) {
+            Ok(seed) => {
+                tracing::info!(
+                    "🌱 Peer {} is seeding v{} for {} at {}",
+                    &seed.peer_id[..12.min(seed.peer_id.len())],
+                    seed.version,
+                    seed.platform,
+                    seed.seed_url
+                );
+                record_binary_seed(seed);
+            }
+            Err(e) => {
+                tracing::debug!("Failed to parse binary seed message: {}", e);
             }
         }
     }

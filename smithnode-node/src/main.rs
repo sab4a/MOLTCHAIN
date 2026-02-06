@@ -563,6 +563,135 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&keypair)?);
             }
         }
+        
+        Commands::AnnounceUpgrade { keypair, version, url, checksum, mandatory, notes, rpc_url } => {
+            use ed25519_dalek::{SigningKey, Signer};
+            
+            tracing::info!("📦 Announcing upgrade v{} to the network...", version);
+            
+            // Load admin keypair
+            let keypair_data: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(&keypair)
+                    .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?
+            )?;
+            let private_key_hex = keypair_data["private_key"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing private_key in keypair file"))?;
+            let public_key_hex = keypair_data["public_key"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing public_key in keypair file"))?;
+            
+            let private_key_bytes: [u8; 32] = hex::decode(private_key_hex)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid private key length"))?;
+            let signing_key = SigningKey::from_bytes(&private_key_bytes);
+            
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            
+            // Detect platform from URL for the checksum mapping
+            let platform = std::env::consts::OS;
+            let arch = std::env::consts::ARCH;
+            
+            let mut download_urls = p2p::UpgradeUrls::default();
+            let mut checksums = p2p::UpgradeChecksums::default();
+            
+            // Map URL and checksum to the correct platform field
+            match (platform, arch) {
+                ("macos", "aarch64") => {
+                    download_urls.darwin_arm64 = Some(url.clone());
+                    checksums.darwin_arm64 = Some(checksum.clone());
+                }
+                ("macos", "x86_64") => {
+                    download_urls.darwin_x64 = Some(url.clone());
+                    checksums.darwin_x64 = Some(checksum.clone());
+                }
+                ("linux", "x86_64") => {
+                    download_urls.linux_x64 = Some(url.clone());
+                    checksums.linux_x64 = Some(checksum.clone());
+                }
+                ("linux", "aarch64") => {
+                    download_urls.linux_arm64 = Some(url.clone());
+                    checksums.linux_arm64 = Some(checksum.clone());
+                }
+                _ => {
+                    // Fallback: put it in linux_x64 for Fly.io
+                    download_urls.linux_x64 = Some(url.clone());
+                    checksums.linux_x64 = Some(checksum.clone());
+                }
+            }
+            
+            // Build signature message: version || timestamp || mandatory || checksums
+            let mut sign_msg = Vec::new();
+            sign_msg.extend_from_slice(version.as_bytes());
+            sign_msg.extend_from_slice(&timestamp.to_le_bytes());
+            sign_msg.push(if mandatory { 1 } else { 0 });
+            if let Some(ref c) = checksums.darwin_arm64 { sign_msg.extend_from_slice(c.as_bytes()); }
+            if let Some(ref c) = checksums.darwin_x64 { sign_msg.extend_from_slice(c.as_bytes()); }
+            if let Some(ref c) = checksums.linux_x64 { sign_msg.extend_from_slice(c.as_bytes()); }
+            if let Some(ref c) = checksums.linux_arm64 { sign_msg.extend_from_slice(c.as_bytes()); }
+            if let Some(ref c) = checksums.windows_x64 { sign_msg.extend_from_slice(c.as_bytes()); }
+            
+            let sig = signing_key.sign(&sign_msg);
+            
+            let announcement = p2p::UpgradeAnnouncement {
+                version: version.clone(),
+                download_urls,
+                checksums,
+                timestamp,
+                mandatory,
+                release_notes: notes.clone(),
+                admin_pubkey: public_key_hex.to_string(),
+                signature: hex::encode(sig.to_bytes()),
+            };
+            
+            // Send the announcement to the running node via RPC
+            // The node will broadcast it via P2P gossipsub
+            let client = reqwest::Client::new();
+            let rpc_payload = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "smithnode_announceUpgrade",
+                "params": [announcement],
+                "id": 1
+            });
+            
+            match client.post(&rpc_url).json(&rpc_payload).send().await {
+                Ok(resp) => {
+                    let body = resp.text().await.unwrap_or_default();
+                    if body.contains("error") {
+                        // Fallback: write to a file that the node can pick up
+                        let announce_path = std::path::Path::new(".smithnode").join("pending_upgrade.json");
+                        std::fs::create_dir_all(".smithnode")?;
+                        std::fs::write(&announce_path, serde_json::to_string_pretty(&announcement)?)?;
+                        tracing::info!("📦 Upgrade announcement saved to {:?}", announce_path);
+                        tracing::info!("   The node will pick it up and broadcast via P2P");
+                    } else {
+                        tracing::info!("✅ Upgrade v{} announced to network via RPC", version);
+                    }
+                }
+                Err(_) => {
+                    // Node may not have the RPC method yet — save to file for manual broadcast
+                    let announce_path = std::path::Path::new(".smithnode").join("pending_upgrade.json");
+                    std::fs::create_dir_all(".smithnode")?;
+                    std::fs::write(&announce_path, serde_json::to_string_pretty(&announcement)?)?;
+                    tracing::info!("📦 Upgrade announcement saved to {:?}", announce_path);
+                    tracing::info!("   Copy this file to the running node's data dir");
+                    tracing::info!("   or broadcast it manually via P2P");
+                }
+            }
+            
+            tracing::info!("══════════════════════════════════════════════════");
+            tracing::info!("📦 UPGRADE ANNOUNCEMENT");
+            tracing::info!("   Version: {}", version);
+            tracing::info!("   URL: {}", url);
+            tracing::info!("   Checksum: {}", checksum);
+            tracing::info!("   Mandatory: {}", mandatory);
+            tracing::info!("   Admin: {}...", &public_key_hex[..16]);
+            if let Some(ref n) = notes {
+                tracing::info!("   Notes: {}", n);
+            }
+            tracing::info!("══════════════════════════════════════════════════");
+        }
 
         Commands::Validator { data_dir, keypair, p2p_bind, peers, rpc_bind, ai_provider, ai_api_key, ai_model, ai_endpoint } => {
             use ed25519_dalek::{SigningKey, Signer, Signature};
@@ -944,6 +1073,9 @@ async fn main() -> anyhow::Result<()> {
                 }
             });
             
+            // Clone network_handle for auto-update task before it's consumed by RPC
+            let network_handle_for_update = network_handle.clone();
+            
             // Optionally start RPC for monitoring
             // L2 fix: Also start state broadcaster when RPC is enabled
             let rpc_handle = if let Some(rpc_addr_str) = rpc_bind {
@@ -1037,6 +1169,267 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("   Validator: {}...", &public_key_hex[..16]);
             tracing::info!("══════════════════════════════════════════════════");
 
+            // Auto-update checker: periodically check for verified upgrades and self-update
+            let state_for_update = state.clone();
+            let data_dir_for_update = data_dir.clone();
+            let p2p_port_for_update = p2p_addr.port();
+            let auto_update_handle = tokio::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+                
+                // ── PERSIST applied_version across exec() restarts ──
+                let applied_version_file = data_dir_for_update.join("applied_upgrade.txt");
+                let mut applied_version: Option<String> = std::fs::read_to_string(&applied_version_file)
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                
+                loop {
+                    interval.tick().await;
+                    
+                    let tracker = p2p::get_version_tracker();
+                    if let Some(upgrade) = tracker.get_latest_upgrade() {
+                        // Skip if we already tried this version
+                        if applied_version.as_ref() == Some(&upgrade.version) {
+                            continue;
+                        }
+                        
+                        // Skip if we're already running this version
+                        if upgrade.version == p2p::SMITH_VERSION {
+                            continue;
+                        }
+                        
+                        tracing::info!("══════════════════════════════════════════════════");
+                        tracing::info!("📦 NEW UPGRADE AVAILABLE: v{}", upgrade.version);
+                        if upgrade.mandatory {
+                            tracing::warn!("⚠️  This is a MANDATORY upgrade!");
+                        }
+                        if let Some(ref notes) = upgrade.release_notes {
+                            tracing::info!("📝 Release notes: {}", notes);
+                        }
+                        
+                        // ── STAGGERED RESTART ──
+                        // Add a random delay (0-30s) so all peers don't restart at once
+                        // This keeps the P2P mesh alive during rolling upgrades
+                        {
+                            use rand::Rng;
+                            let jitter_secs: u64 = rand::thread_rng().gen_range(0..30);
+                            tracing::info!("⏳ Staggering upgrade by {}s to preserve P2P mesh...", jitter_secs);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(jitter_secs)).await;
+                        }
+                        
+                        // Get platform-specific URL and checksum
+                        let platform = std::env::consts::OS;
+                        let arch = std::env::consts::ARCH;
+                        
+                        let (download_url, expected_checksum) = match (platform, arch) {
+                            ("macos", "aarch64") => (
+                                upgrade.download_urls.darwin_arm64.clone(),
+                                upgrade.checksums.darwin_arm64.clone(),
+                            ),
+                            ("macos", "x86_64") => (
+                                upgrade.download_urls.darwin_x64.clone(),
+                                upgrade.checksums.darwin_x64.clone(),
+                            ),
+                            ("linux", "x86_64") => (
+                                upgrade.download_urls.linux_x64.clone(),
+                                upgrade.checksums.linux_x64.clone(),
+                            ),
+                            ("linux", "aarch64") => (
+                                upgrade.download_urls.linux_arm64.clone(),
+                                upgrade.checksums.linux_arm64.clone(),
+                            ),
+                            _ => (None, None),
+                        };
+                        
+                        if let (Some(url), Some(checksum)) = (download_url, expected_checksum) {
+                            // ── P2P BINARY RELAY: Try peer seeds first, then HTTP ──
+                            let download_key = format!("{}_{}", 
+                                match platform { "macos" => "darwin", p => p },
+                                match arch { "aarch64" => "arm64", "x86_64" => "x64", a => a }
+                            );
+                            let peer_seeds = p2p::get_seed_urls(&upgrade.version, &download_key);
+                            
+                            // Build URL list: peer seeds first (P2P relay), then admin HTTP URL
+                            let mut try_urls: Vec<String> = peer_seeds;
+                            try_urls.push(url.clone());
+                            
+                            if try_urls.len() > 1 {
+                                tracing::info!("🌱 {} P2P seed(s) available + 1 HTTP source", try_urls.len() - 1);
+                            }
+                            
+                            let mut download_success = false;
+                            let mut downloaded_bytes: Option<Vec<u8>> = None;
+                            
+                            for (i, try_url) in try_urls.iter().enumerate() {
+                                let source = if i < try_urls.len() - 1 { "P2P seed" } else { "HTTP" };
+                                tracing::info!("⬇️  [{}] Downloading from: {}", source, try_url);
+                                
+                                match reqwest::get(try_url).await {
+                                    Ok(response) if response.status().is_success() => {
+                                        match response.bytes().await {
+                                            Ok(bytes) => {
+                                                // Verify SHA256 checksum
+                                                use sha2::{Sha256, Digest};
+                                                let mut hasher = Sha256::new();
+                                                hasher.update(&bytes);
+                                                let computed_checksum = hex::encode(hasher.finalize());
+                                                
+                                                if computed_checksum != checksum {
+                                                    tracing::warn!("⚠️ [{}] Checksum mismatch from {}", source, try_url);
+                                                    tracing::warn!("   Expected: {}", checksum);
+                                                    tracing::warn!("   Got:      {}", computed_checksum);
+                                                    continue; // Try next URL
+                                                }
+                                                
+                                                tracing::info!("✅ Checksum verified via {}: {}", source, &checksum[..16]);
+                                                downloaded_bytes = Some(bytes.to_vec());
+                                                download_success = true;
+                                                break;
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("⚠️ [{}] Failed to read response: {}", source, e);
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Ok(response) => {
+                                        tracing::warn!("⚠️ [{}] HTTP {}", source, response.status());
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("⚠️ [{}] Download failed: {}", source, e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            
+                            if !download_success || downloaded_bytes.is_none() {
+                                tracing::error!("❌ All download sources failed for v{}", upgrade.version);
+                                applied_version = Some(upgrade.version.clone());
+                                let _ = std::fs::write(&applied_version_file, &upgrade.version);
+                                continue;
+                            }
+                            
+                            let bytes = downloaded_bytes.unwrap();
+                            
+                            // ── ANNOUNCE AS P2P SEED ──
+                            // After successful download, tell peers we have the binary
+                            {
+                                let seed_announcement = p2p::BinarySeedAnnouncement {
+                                    version: upgrade.version.clone(),
+                                    platform: download_key.clone(),
+                                    // Peers can download from our RPC port (mini binary server)
+                                    seed_url: format!("http://127.0.0.1:{}/upgrade-binary", p2p_port_for_update + 10),
+                                    checksum: checksum.clone(),
+                                    peer_id: p2p::get_local_peer_info()
+                                        .map(|p| p.peer_id.clone())
+                                        .unwrap_or_default(),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs(),
+                                };
+                                let _ = network_handle_for_update.broadcast_binary_seed(seed_announcement).await;
+                            }
+                            
+                            // ── FLUSH STATE BEFORE RESTART ──
+                            tracing::info!("💾 Flushing state to disk before restart...");
+                            if let Err(e) = state_for_update.save() {
+                                tracing::error!("❌ Failed to save state before upgrade: {}", e);
+                                tracing::error!("   Aborting upgrade to prevent state loss");
+                                applied_version = Some(upgrade.version.clone());
+                                let _ = std::fs::write(&applied_version_file, &upgrade.version);
+                                continue;
+                            }
+                            tracing::info!("✅ State flushed successfully");
+                            
+                            // ── PERSIST applied_version BEFORE exec() ──
+                            // So after restart, we don't re-download the same version
+                            let _ = std::fs::write(&applied_version_file, &upgrade.version);
+                            
+                            // Get current executable path
+                            match std::env::current_exe() {
+                                Ok(current_exe) => {
+                                    let backup_path = current_exe.with_extension("old");
+                                    let new_path = current_exe.with_extension("new");
+                                    
+                                    // Write new binary to .new file
+                                    if let Err(e) = std::fs::write(&new_path, &bytes) {
+                                        tracing::error!("❌ Failed to write new binary: {}", e);
+                                        applied_version = Some(upgrade.version.clone());
+                                        continue;
+                                    }
+                                    
+                                    // Make it executable (Unix)
+                                    #[cfg(unix)]
+                                    {
+                                        use std::os::unix::fs::PermissionsExt;
+                                        let _ = std::fs::set_permissions(
+                                            &new_path,
+                                            std::fs::Permissions::from_mode(0o755),
+                                        );
+                                    }
+                                    
+                                    // Atomic swap: current -> .old, .new -> current
+                                    if let Err(e) = std::fs::rename(&current_exe, &backup_path) {
+                                        tracing::error!("❌ Failed to backup current binary: {}", e);
+                                        let _ = std::fs::remove_file(&new_path);
+                                        applied_version = Some(upgrade.version.clone());
+                                        continue;
+                                    }
+                                    
+                                    if let Err(e) = std::fs::rename(&new_path, &current_exe) {
+                                        tracing::error!("❌ Failed to install new binary: {}", e);
+                                        // Rollback
+                                        let _ = std::fs::rename(&backup_path, &current_exe);
+                                        applied_version = Some(upgrade.version.clone());
+                                        continue;
+                                    }
+                                    
+                                    tracing::info!("══════════════════════════════════════════════════");
+                                    tracing::info!("✅ UPGRADE INSTALLED: v{}", upgrade.version);
+                                    tracing::info!("   Binary updated at: {:?}", current_exe);
+                                    tracing::info!("   Backup at: {:?}", backup_path);
+                                    tracing::info!("   🔄 Restarting node...");
+                                    tracing::info!("══════════════════════════════════════════════════");
+                                    
+                                    // Re-exec ourselves with the same arguments
+                                    let args: Vec<String> = std::env::args().collect();
+                                    
+                                    #[cfg(unix)]
+                                    {
+                                        use std::os::unix::process::CommandExt;
+                                        let err = std::process::Command::new(&current_exe)
+                                            .args(&args[1..])
+                                            .exec();
+                                        // If exec returns, it failed
+                                        tracing::error!("❌ Failed to re-exec: {}", err);
+                                        // Rollback
+                                        let _ = std::fs::rename(&backup_path, &current_exe);
+                                    }
+                                    
+                                    #[cfg(not(unix))]
+                                    {
+                                        // On non-Unix, just exit and let a process manager restart
+                                        tracing::info!("   Please restart the node manually (non-Unix platform)");
+                                        std::process::exit(0);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("❌ Failed to determine current executable: {}", e);
+                                }
+                            }
+                        } else {
+                            tracing::info!("ℹ️  No download URL for this platform ({}/{})", platform, arch);
+                        }
+                        
+                        applied_version = Some(upgrade.version.clone());
+                        let _ = std::fs::write(&applied_version_file, &upgrade.version);
+                        tracing::info!("══════════════════════════════════════════════════");
+                    }
+                }
+            });
+
             // Wait for shutdown
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
@@ -1045,6 +1438,7 @@ async fn main() -> anyhow::Result<()> {
                 _ = p2p_handle => {}
                 _ = event_handler => {}
                 _ = validator_handle => {}
+                _ = auto_update_handle => {}
             }
 
             if let Some(h) = rpc_handle {

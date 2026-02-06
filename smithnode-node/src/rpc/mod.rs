@@ -690,6 +690,10 @@ pub trait SmithNodeRpcApi {
     #[method(name = "smithnode_checkUpdate")]
     async fn check_update(&self) -> RpcResult<UpdateCheckResponse>;
 
+    /// Announce a new upgrade to the network (admin only)
+    #[method(name = "smithnode_announceUpgrade")]
+    async fn announce_upgrade(&self, announcement: crate::p2p::UpgradeAnnouncement) -> RpcResult<serde_json::Value>;
+
     /// Get P2P-verified validators (only validators seen via gossipsub, not just RPC)
     /// This is the TRUSTWORTHY list - these validators are running true P2P nodes
     #[method(name = "smithnode_getP2PValidators")]
@@ -1408,6 +1412,41 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
             release_notes: verified_upgrade.as_ref().and_then(|u| u.release_notes.clone()),
             verified: verified_upgrade.is_some(),
         })
+    }
+
+    async fn announce_upgrade(&self, announcement: crate::p2p::UpgradeAnnouncement) -> RpcResult<serde_json::Value> {
+        tracing::info!("📦 Received upgrade announcement via RPC: v{}", announcement.version);
+        
+        // Verify the announcement signature and admin key
+        if !announcement.verify() {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32001,
+                "Invalid upgrade announcement: signature verification failed or untrusted admin key",
+                None::<()>,
+            ));
+        }
+        
+        // Record in version tracker
+        let tracker = get_version_tracker();
+        tracker.record_upgrade(announcement.clone());
+        
+        // Broadcast via P2P network if available
+        let mut broadcast_ok = false;
+        if let Some(ref network) = self.network {
+            let net = network.lock().await.clone();
+            if let Err(e) = net.broadcast_upgrade(announcement.clone()).await {
+                tracing::warn!("Failed to broadcast upgrade via P2P: {}", e);
+            } else {
+                broadcast_ok = true;
+                tracing::info!("✅ Upgrade v{} broadcast to P2P network", announcement.version);
+            }
+        }
+        
+        Ok(serde_json::json!({
+            "status": "ok",
+            "version": announcement.version,
+            "broadcast": broadcast_ok,
+        }))
     }
 
     async fn get_p2p_validators(&self) -> RpcResult<P2PValidatorsResponse> {

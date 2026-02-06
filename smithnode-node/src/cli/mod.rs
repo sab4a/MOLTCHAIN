@@ -88,4 +88,36 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    
+    /// Announce a software upgrade to all peers (admin only)
+    /// Peers will auto-download and restart when they see a verified announcement
+    AnnounceUpgrade {
+        /// Path to admin keypair JSON file (must be in TRUSTED_ADMIN_KEYS)
+        #[arg(long, short = 'k')]
+        keypair: PathBuf,
+        
+        /// New version string (semver, e.g. "0.6.0")
+        #[arg(long)]
+        version: String,
+        
+        /// Download URL for the new binary (platform auto-detected by peers)
+        #[arg(long)]
+        url: String,
+        
+        /// SHA256 checksum of the binary
+        #[arg(long)]
+        checksum: String,
+        
+        /// Is this a mandatory upgrade? (peers may reject blocks from old versions)
+        #[arg(long, default_value = "false")]
+        mandatory: bool,
+        
+        /// Release notes
+        #[arg(long)]
+        notes: Option<String>,
+        
+        /// RPC endpoint of the running node to publish through
+        #[arg(long, default_value = "http://127.0.0.1:26658")]
+        rpc_url: String,
+    },
 }
