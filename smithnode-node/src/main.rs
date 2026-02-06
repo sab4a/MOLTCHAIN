@@ -814,12 +814,19 @@ async fn main() -> anyhow::Result<()> {
             if state.get_height() == 0 {
                 tracing::info!("📥 Requesting state sync from peers...");
                 let _ = network_handle.request_state_sync().await;
-                // Wait for state sync to complete before doing anything
-                for i in 0..10 {
+                // Wait for state sync to complete — only check height, not validator count.
+                // The loaded state.json may already have validators (from a previous run)
+                // but still be at height 0, so checking validators would exit too early.
+                for i in 0..15 {
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    if state.get_height() > 0 || state.get_all_validators().len() > 0 {
-                        tracing::info!("✅ State sync completed after {}s", i + 1);
+                    if state.get_height() > 0 {
+                        tracing::info!("✅ State sync completed after {}s (height: {})", i + 1, state.get_height());
                         break;
+                    }
+                    // Re-request every 5s in case the first request was lost
+                    if (i + 1) % 5 == 0 {
+                        tracing::info!("📥 Re-requesting state sync (attempt {})...", (i + 1) / 5 + 1);
+                        let _ = network_handle.request_state_sync().await;
                     }
                 }
             }

@@ -551,6 +551,9 @@ impl BlockMessage {
 pub struct StateRequestMessage {
     pub requester_peer_id: String,
     pub current_height: u64,  // 0 if starting fresh
+    /// Unique nonce so gossipsub doesn't de-duplicate repeated requests
+    #[serde(default)]
+    pub nonce: u64,
 }
 
 /// State sync response - full state snapshot from a peer
@@ -1812,9 +1815,16 @@ impl SmithNodeNetwork {
             }
             NetworkCommand::RequestStateSync => {
                 // Request state from peers
+                // Include a nonce so gossipsub doesn't reject repeated requests
+                // as duplicates (message_id = SHA256(data), same data = same id)
+                let nonce = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
                 let msg = StateRequestMessage {
                     requester_peer_id: self.local_peer_id.clone(),
                     current_height: self.state.get_height(),
+                    nonce,
                 };
                 
                 if let Ok(data) = serde_json::to_vec(&msg) {
@@ -2118,7 +2128,45 @@ impl SmithNodeNetwork {
                     response.validators.len()
                 );
                 
-                // Emit event for external handler to apply state
+                // CRITICAL: Apply state directly here so it works during startup
+                // before any event handler is spawned. Previously, state was only
+                // applied by the event handler (spawned later), so state sync
+                // responses received during the startup wait were never applied.
+                let validators: Vec<crate::stf::ValidatorInfo> = response.validators.iter()
+                    .filter_map(|v| {
+                        let pubkey_bytes = hex::decode(&v.public_key).ok()?;
+                        if pubkey_bytes.len() != 32 { return None; }
+                        let mut pubkey = [0u8; 32];
+                        pubkey.copy_from_slice(&pubkey_bytes);
+                        Some(crate::stf::ValidatorInfo {
+                            public_key: pubkey,
+                            balance: v.balance,
+                            validations_count: v.validations_count,
+                            reputation_score: v.reputation_score,
+                            last_active_timestamp: v.last_active_timestamp,
+                            last_validation_height: 0,
+                            is_online: true,
+                            nonce: v.nonce,
+                        })
+                    })
+                    .collect();
+                
+                let state_root_bytes = hex::decode(&response.state_root).unwrap_or_default();
+                let mut state_root = [0u8; 32];
+                if state_root_bytes.len() == 32 {
+                    state_root.copy_from_slice(&state_root_bytes);
+                }
+                
+                if self.state.apply_peer_state(
+                    response.height,
+                    state_root,
+                    response.total_supply,
+                    validators,
+                ) {
+                    tracing::info!("✅ P2P layer applied state sync: now at height {}", response.height);
+                }
+                
+                // Also emit event so the event handler can merge tx_records etc.
                 let _ = self.event_tx.send(NetworkEvent::StateReceived(response)).await;
             } else {
                 tracing::debug!("Ignoring older state from peer (their height: {}, ours: {})",
