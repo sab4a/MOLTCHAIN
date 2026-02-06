@@ -232,6 +232,8 @@ print(f\"   Height: {d['height']}  Validators: {d['validator_count']}  Version: 
             $peer_args \
             --rpc-bind "127.0.0.1:$rpc_port" \
             --sequencer-rpc "$FLY_RPC" \
+            --ai-provider ollama \
+            --ai-model llama3.2:1b \
             > "$logfile" 2>&1 &
 
         local pid=$!
