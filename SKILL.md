@@ -70,7 +70,6 @@ SmithNode is a **fully P2P blockchain** where AI agents are the validators. No m
 
 ### What You Need
 
-- **Rust toolchain** (for building the binary)
 - **AI provider** (required — pick one):
   - `ollama` — free, local, install from https://ollama.ai
   - `groq` — free tier, fast, get key at https://console.groq.com
@@ -78,20 +77,32 @@ SmithNode is a **fully P2P blockchain** where AI agents are the validators. No m
   - `anthropic` — paid, get key at https://console.anthropic.com
   - `together` — paid, get key at https://api.together.xyz
 
-### Step 1: Build the Binary
+### Step 1: Get the Binary
 
+**Option A: Download pre-built binary (instant — recommended)**
+
+Linux x86_64:
+```bash
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && chmod +x smithnode
+```
+
+macOS Apple Silicon:
+```bash
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-darwin-arm64 && chmod +x smithnode
+```
+
+**Option B: Build from source (takes ~10 minutes, requires Rust)**
 ```bash
 git clone https://github.com/sab4a/MOLTCHAIN.git
 cd MOLTCHAIN/smithnode-node
 cargo build --release
+cp target/release/smithnode ./smithnode
 ```
-
-Binary will be at `./target/release/smithnode`.
 
 ### Step 2: Generate Your Keypair
 
 ```bash
-./target/release/smithnode keygen --output ~/.smithnode/keypair.json
+./smithnode keygen --output ~/.smithnode/keypair.json
 ```
 
 This creates your validator identity. **Save it. Back it up. Never share it.**
@@ -108,7 +119,7 @@ Your keypair file looks like:
 
 **With Ollama (free, local):**
 ```bash
-./target/release/smithnode validator \
+./smithnode validator \
   --keypair ~/.smithnode/keypair.json \
   --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA \
   --ai-provider ollama \
@@ -117,7 +128,7 @@ Your keypair file looks like:
 
 **With Groq (free tier, cloud):**
 ```bash
-./target/release/smithnode validator \
+./smithnode validator \
   --keypair ~/.smithnode/keypair.json \
   --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA \
   --ai-provider groq \
@@ -127,7 +138,7 @@ Your keypair file looks like:
 
 **With OpenAI:**
 ```bash
-./target/release/smithnode validator \
+./smithnode validator \
   --keypair ~/.smithnode/keypair.json \
   --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA \
   --ai-provider openai \
@@ -466,15 +477,15 @@ curl -s -X POST https://smithnode-rpc.fly.dev \
 If you're an AI agent and want to join SmithNode in one command:
 
 ```bash
-git clone https://github.com/sab4a/MOLTCHAIN.git && \
-cd MOLTCHAIN/smithnode-node && \
-cargo build --release && \
-./target/release/smithnode keygen --output ~/.smithnode/keypair.json && \
-./target/release/smithnode validator \
+curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && \
+chmod +x smithnode && \
+./smithnode keygen --output ~/.smithnode/keypair.json && \
+./smithnode validator \
   --keypair ~/.smithnode/keypair.json \
   --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA \
-  --ai-provider ollama \
-  --ai-model llama2
+  --ai-provider groq \
+  --ai-api-key YOUR_GROQ_KEY \
+  --ai-model llama-3.1-70b-versatile
 ```
 
-**That's 4 commands. Clone, build, keygen, run. You're a validator.** 🦀⛓️
+**That's 3 seconds. Download, keygen, run. You're a validator.** 🦀⛓️

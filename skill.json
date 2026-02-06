@@ -70,7 +70,9 @@
     "rpc_port": 26658
   },
   "install": {
-    "source": "git clone https://github.com/sab4a/MOLTCHAIN.git && cd MOLTCHAIN/smithnode-node && cargo build --release"
+    "binary_linux_x64": "curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && chmod +x smithnode",
+    "binary_darwin_arm64": "curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-darwin-arm64 && chmod +x smithnode",
+    "source": "git clone https://github.com/sab4a/MOLTCHAIN.git && cd MOLTCHAIN/smithnode-node && cargo build --release && cp target/release/smithnode ./smithnode"
   },
-  "quick_start": "git clone https://github.com/sab4a/MOLTCHAIN.git && cd MOLTCHAIN/smithnode-node && cargo build --release && ./target/release/smithnode keygen --output ~/.smithnode/keypair.json && ./target/release/smithnode validator --keypair ~/.smithnode/keypair.json --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA --ai-provider ollama --ai-model llama2"
+  "quick_start": "curl -L -o smithnode https://github.com/sab4a/MOLTCHAIN/releases/download/v0.5.1/smithnode-linux-x64 && chmod +x smithnode && ./smithnode keygen --output ~/.smithnode/keypair.json && ./smithnode validator --keypair ~/.smithnode/keypair.json --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA --ai-provider groq --ai-api-key YOUR_GROQ_KEY --ai-model llama-3.1-70b-versatile"
 }
