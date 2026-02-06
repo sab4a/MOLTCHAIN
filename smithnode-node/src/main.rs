@@ -610,7 +610,14 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         
-        Commands::AnnounceUpgrade { keypair, version, url, checksum, mandatory, notes, rpc_url } => {
+        Commands::AnnounceUpgrade {
+            keypair, version,
+            url_linux_x64, checksum_linux_x64,
+            url_darwin_arm64, checksum_darwin_arm64,
+            url_darwin_x64, checksum_darwin_x64,
+            url_linux_arm64, checksum_linux_arm64,
+            mandatory, notes, rpc_url
+        } => {
             use ed25519_dalek::{SigningKey, Signer};
             
             tracing::info!("📦 Announcing upgrade v{} to the network...", version);
@@ -635,36 +642,32 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap()
                 .as_secs();
             
-            // Detect platform from URL for the checksum mapping
-            let platform = std::env::consts::OS;
-            let arch = std::env::consts::ARCH;
+            // Populate per-platform download URLs and checksums
+            let download_urls = p2p::UpgradeUrls {
+                linux_x64: url_linux_x64.clone(),
+                linux_arm64: url_linux_arm64.clone(),
+                darwin_arm64: url_darwin_arm64.clone(),
+                darwin_x64: url_darwin_x64.clone(),
+                windows_x64: None,
+            };
+            let checksums = p2p::UpgradeChecksums {
+                linux_x64: checksum_linux_x64.clone(),
+                linux_arm64: checksum_linux_arm64.clone(),
+                darwin_arm64: checksum_darwin_arm64.clone(),
+                darwin_x64: checksum_darwin_x64.clone(),
+                windows_x64: None,
+            };
             
-            let mut download_urls = p2p::UpgradeUrls::default();
-            let mut checksums = p2p::UpgradeChecksums::default();
-            
-            // Map URL and checksum to the correct platform field
-            match (platform, arch) {
-                ("macos", "aarch64") => {
-                    download_urls.darwin_arm64 = Some(url.clone());
-                    checksums.darwin_arm64 = Some(checksum.clone());
-                }
-                ("macos", "x86_64") => {
-                    download_urls.darwin_x64 = Some(url.clone());
-                    checksums.darwin_x64 = Some(checksum.clone());
-                }
-                ("linux", "x86_64") => {
-                    download_urls.linux_x64 = Some(url.clone());
-                    checksums.linux_x64 = Some(checksum.clone());
-                }
-                ("linux", "aarch64") => {
-                    download_urls.linux_arm64 = Some(url.clone());
-                    checksums.linux_arm64 = Some(checksum.clone());
-                }
-                _ => {
-                    // Fallback: put it in linux_x64 for Fly.io
-                    download_urls.linux_x64 = Some(url.clone());
-                    checksums.linux_x64 = Some(checksum.clone());
-                }
+            // Log what platforms are covered
+            let mut covered: Vec<&str> = Vec::new();
+            if url_linux_x64.is_some() { covered.push("linux-x64"); }
+            if url_darwin_arm64.is_some() { covered.push("darwin-arm64"); }
+            if url_darwin_x64.is_some() { covered.push("darwin-x64"); }
+            if url_linux_arm64.is_some() { covered.push("linux-arm64"); }
+            tracing::info!("📋 Platforms covered: {}", covered.join(", "));
+            if covered.is_empty() {
+                tracing::error!("❌ No platform URLs provided! Use --url-linux-x64 / --url-darwin-arm64 etc.");
+                std::process::exit(1);
             }
             
             // Build signature message: version || timestamp || mandatory || checksums
@@ -679,6 +682,21 @@ async fn main() -> anyhow::Result<()> {
             if let Some(ref c) = checksums.windows_x64 { sign_msg.extend_from_slice(c.as_bytes()); }
             
             let sig = signing_key.sign(&sign_msg);
+            
+            // Log before moving values into announcement struct
+            tracing::info!("══════════════════════════════════════════════════");
+            tracing::info!("📦 UPGRADE ANNOUNCEMENT");
+            tracing::info!("   Version: {}", version);
+            if let Some(ref u) = download_urls.linux_x64 { tracing::info!("   linux-x64:      {}", u); }
+            if let Some(ref u) = download_urls.darwin_arm64 { tracing::info!("   darwin-arm64:   {}", u); }
+            if let Some(ref u) = download_urls.darwin_x64 { tracing::info!("   darwin-x64:     {}", u); }
+            if let Some(ref u) = download_urls.linux_arm64 { tracing::info!("   linux-arm64:    {}", u); }
+            tracing::info!("   Mandatory: {}", mandatory);
+            tracing::info!("   Admin: {}...", &public_key_hex[..16]);
+            if let Some(ref n) = notes {
+                tracing::info!("   Notes: {}", n);
+            }
+            tracing::info!("══════════════════════════════════════════════════");
             
             let announcement = p2p::UpgradeAnnouncement {
                 version: version.clone(),
@@ -725,18 +743,6 @@ async fn main() -> anyhow::Result<()> {
                     tracing::info!("   or broadcast it manually via P2P");
                 }
             }
-            
-            tracing::info!("══════════════════════════════════════════════════");
-            tracing::info!("📦 UPGRADE ANNOUNCEMENT");
-            tracing::info!("   Version: {}", version);
-            tracing::info!("   URL: {}", url);
-            tracing::info!("   Checksum: {}", checksum);
-            tracing::info!("   Mandatory: {}", mandatory);
-            tracing::info!("   Admin: {}...", &public_key_hex[..16]);
-            if let Some(ref n) = notes {
-                tracing::info!("   Notes: {}", n);
-            }
-            tracing::info!("══════════════════════════════════════════════════");
         }
 
         Commands::Validator { data_dir, keypair, p2p_bind, peers, rpc_bind, ai_provider, ai_api_key, ai_model, ai_endpoint, sequencer_rpc } => {

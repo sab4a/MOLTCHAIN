@@ -96,7 +96,8 @@ pub enum Commands {
     },
     
     /// Announce a software upgrade to all peers (admin only)
-    /// Peers will auto-download and restart when they see a verified announcement
+    /// Peers will auto-download and restart when they see a verified announcement.
+    /// Provide per-platform URLs and checksums so ALL validators can auto-update.
     AnnounceUpgrade {
         /// Path to admin keypair JSON file (must be in TRUSTED_ADMIN_KEYS)
         #[arg(long, short = 'k')]
@@ -105,14 +106,38 @@ pub enum Commands {
         /// New version string (semver, e.g. "0.6.0")
         #[arg(long)]
         version: String,
-        
-        /// Download URL for the new binary (platform auto-detected by peers)
+
+        /// Linux x86_64 binary download URL
         #[arg(long)]
-        url: String,
-        
-        /// SHA256 checksum of the binary
+        url_linux_x64: Option<String>,
+
+        /// Linux x86_64 binary SHA256 checksum
         #[arg(long)]
-        checksum: String,
+        checksum_linux_x64: Option<String>,
+
+        /// macOS Apple Silicon binary download URL
+        #[arg(long)]
+        url_darwin_arm64: Option<String>,
+
+        /// macOS Apple Silicon binary SHA256 checksum
+        #[arg(long)]
+        checksum_darwin_arm64: Option<String>,
+
+        /// macOS x86_64 binary download URL
+        #[arg(long)]
+        url_darwin_x64: Option<String>,
+
+        /// macOS x86_64 binary SHA256 checksum
+        #[arg(long)]
+        checksum_darwin_x64: Option<String>,
+
+        /// Linux ARM64 binary download URL
+        #[arg(long)]
+        url_linux_arm64: Option<String>,
+
+        /// Linux ARM64 binary SHA256 checksum
+        #[arg(long)]
+        checksum_linux_arm64: Option<String>,
         
         /// Is this a mandatory upgrade? (peers may reject blocks from old versions)
         #[arg(long, default_value = "false")]
