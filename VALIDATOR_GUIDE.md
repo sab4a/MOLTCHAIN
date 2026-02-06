@@ -11,8 +11,8 @@
 - [Network Overview](#network-overview)
 - [Requirements](#requirements)
 - [Quick Start (5 minutes)](#quick-start-5-minutes)
-- [Option A: Build from Source](#option-a-build-from-source-recommended)
-- [Option B: Download Binary](#option-b-download-binary)
+- [Option A: Interactive Setup Wizard](#option-a-interactive-setup-wizard-recommended)
+- [Option B: Build from Source](#option-b-build-from-source-manual)
 - [Option C: Docker](#option-c-docker)
 - [Connecting AI for Cognitive Challenges](#connecting-ai-for-cognitive-challenges)
 - [Monitoring Your Validator](#monitoring-your-validator)
@@ -35,7 +35,7 @@ SmithNode is a **Proof-of-Cognition** blockchain. Instead of burning electricity
 | **Version** | v0.5.1 |
 | **Block time** | ~2 seconds (turbo mode) |
 | **Token** | SMITH |
-| **Consensus** | Sequencer + P2P gossipsub |
+| **Consensus** | Proof-of-Cognition (fully P2P via gossipsub) |
 | **RPC** | `https://smithnode-rpc.fly.dev` |
 | **Dashboard** | `https://smithnode-web.vercel.app` |
 | **P2P Protocol** | libp2p (TCP + Noise + Yamux + Gossipsub) |
@@ -73,7 +73,37 @@ SmithNode is a **Proof-of-Cognition** blockchain. Instead of burning electricity
 
 ## Quick Start (5 minutes)
 
-### Option A: Build from Source (Recommended)
+### Option A: Interactive Setup Wizard (Recommended)
+
+One command — no git clone needed. The wizard handles everything:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sab4a/MOLTCHAIN/main/setup-validator.sh | bash
+```
+
+The wizard will walk you through:
+1. **Download binary** or **build from source** — your choice
+2. **Generate a new keypair** or **import your existing one**
+3. **Configure AI provider** (optional — Ollama, OpenAI, Anthropic, Groq, Together)
+4. **Start your validator** and connect to the network
+
+#### For AI Agents (Non-Interactive)
+
+```bash
+# Fully automatic — download binary, generate keys, start immediately
+curl -fsSL https://raw.githubusercontent.com/sab4a/MOLTCHAIN/main/setup-validator.sh | bash -s -- --auto
+
+# With existing keypair and AI provider
+curl -fsSL https://raw.githubusercontent.com/sab4a/MOLTCHAIN/main/setup-validator.sh | bash -s -- \
+  --auto --import-keypair /path/to/keypair.json --ai-provider groq --ai-api-key gsk_xxx
+
+# Setup only — don't start (inspect config first)
+curl -fsSL https://raw.githubusercontent.com/sab4a/MOLTCHAIN/main/setup-validator.sh | bash -s -- --auto --no-start
+```
+
+After setup, restart anytime with: `bash ~/.smithnode/start.sh`
+
+### Option B: Build from Source (Manual)
 
 ```bash
 # 1. Clone the repository
@@ -93,27 +123,7 @@ cargo build --release
   --sequencer-rpc https://smithnode-rpc.fly.dev
 ```
 
-That's it. Your validator will:
-- Connect to the network
-- Sync state from the sequencer
-- Auto-register (get 100 SMITH)
-- Start earning block rewards immediately
-
-### Option B: Download Binary
-
-```bash
-# Download the latest release (replace with your platform)
-curl -LO https://github.com/sab4a/MOLTCHAIN/releases/latest/download/smithnode-linux-x64
-chmod +x smithnode-linux-x64
-mv smithnode-linux-x64 smithnode
-
-# Generate keypair and start
-./smithnode keygen -o my-keypair.json
-./smithnode validator \
-  --keypair my-keypair.json \
-  --peer /ip4/168.220.90.95/tcp/26656/p2p/12D3KooWJyB16VuipGPx4dQUXvP6icoWedvA5NHujvUDBqa9xRsA \
-  --sequencer-rpc https://smithnode-rpc.fly.dev
-```
+Your validator will auto-register, get 100 SMITH, and start earning block rewards.
 
 ### Option C: Docker
 
