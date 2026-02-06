@@ -8,6 +8,7 @@ mod rpc;
 mod p2p;
 mod cli;
 mod storage;
+mod ai;
 
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -16,6 +17,184 @@ use crate::cli::{Cli, Commands};
 use crate::stf::SmithNodeState;
 use crate::rpc::start_rpc_server;
 use crate::p2p::SmithNodeNetwork;
+
+// NOTE: AI messaging functions DISABLED on devnet
+// Focus on: Challenges (Proof of Cognition) + Governance (parameter voting)
+// 
+// Removed:
+// - should_answer_question() - committee selection for AI Q&A
+// - generate_ai_response() - auto AI response generation
+//
+// These can be re-enabled for mainnet when there's actual value in AI discussions
+
+/// Built-in deterministic puzzle solver for validators without AI
+/// Handles simple puzzles (pattern, math, text transform) without needing an LLM
+fn builtin_solve_puzzle(puzzle: &stf::CognitivePuzzle) -> Option<String> {
+    use stf::PuzzleType;
+    
+    match puzzle.puzzle_type {
+        PuzzleType::PatternNext => {
+            // Try to detect arithmetic/geometric patterns from the sequence
+            if let Some(ref seq) = puzzle.sequence {
+                let nums: Vec<i64> = seq.iter()
+                    .filter_map(|s| s.parse::<i64>().ok())
+                    .collect();
+                if nums.len() >= 2 {
+                    // Check arithmetic (constant difference)
+                    let diff = nums[1] - nums[0];
+                    let is_arithmetic = nums.windows(2).all(|w| w[1] - w[0] == diff);
+                    if is_arithmetic {
+                        return Some((nums.last().unwrap() + diff).to_string());
+                    }
+                    // Check geometric (constant ratio)
+                    if nums[0] != 0 && nums[1] % nums[0] == 0 {
+                        let ratio = nums[1] / nums[0];
+                        let is_geometric = nums.windows(2).all(|w| w[0] != 0 && w[1] / w[0] == ratio);
+                        if is_geometric {
+                            return Some((nums.last().unwrap() * ratio).to_string());
+                        }
+                    }
+                    // Check second-order differences
+                    if nums.len() >= 3 {
+                        let diffs: Vec<i64> = nums.windows(2).map(|w| w[1] - w[0]).collect();
+                        let second_diff = diffs[1] - diffs[0];
+                        let is_quadratic = diffs.windows(2).all(|w| w[1] - w[0] == second_diff);
+                        if is_quadratic {
+                            let next_diff = diffs.last().unwrap() + second_diff;
+                            return Some((nums.last().unwrap() + next_diff).to_string());
+                        }
+                    }
+                }
+            }
+            None
+        }
+        PuzzleType::NaturalLanguageMath => {
+            // Parse natural language math from prompt
+            // Prompts look like: "Calculate: 'five plus three'. Reply with ONLY the number."
+            let prompt = puzzle.prompt.to_lowercase();
+            // Extract the expression between quotes
+            if let Some(start) = prompt.find('\'') {
+                if let Some(end) = prompt.rfind('\'') {
+                    if end > start {
+                        let expr = &prompt[start+1..end];
+                        return solve_nl_math(expr);
+                    }
+                }
+            }
+            None
+        }
+        PuzzleType::TextTransform => {
+            if let Some(ref input) = puzzle.input_text {
+                let prompt_lower = puzzle.prompt.to_lowercase();
+                if prompt_lower.contains("reverse") && prompt_lower.contains("uppercase") {
+                    return Some(input.chars().rev().collect::<String>().to_uppercase());
+                } else if prompt_lower.contains("reverse") {
+                    return Some(input.chars().rev().collect::<String>());
+                } else if prompt_lower.contains("uppercase") {
+                    return Some(input.to_uppercase());
+                } else if prompt_lower.contains("vowel") {
+                    return Some(input.chars().filter(|c| !matches!(c, 'a'|'e'|'i'|'o'|'u'|'A'|'E'|'I'|'O'|'U')).collect());
+                } else if prompt_lower.contains("count") && prompt_lower.contains("character") {
+                    return Some(input.len().to_string());
+                }
+            }
+            None
+        }
+        PuzzleType::EncodingDecode => {
+            // Decode hex, rot13, or reversed strings
+            let prompt_lower = puzzle.prompt.to_lowercase();
+            if let Some(ref input) = puzzle.input_text {
+                if prompt_lower.contains("hex") {
+                    if let Ok(bytes) = hex::decode(input) {
+                        if let Ok(s) = String::from_utf8(bytes) {
+                            return Some(s);
+                        }
+                    }
+                } else if prompt_lower.contains("reversed") {
+                    return Some(input.chars().rev().collect::<String>());
+                } else if prompt_lower.contains("rot13") {
+                    let decoded: String = input.chars().map(|c| {
+                        if c.is_ascii_lowercase() {
+                            (((c as u8 - b'a' + 13) % 26) + b'a') as char
+                        } else if c.is_ascii_uppercase() {
+                            (((c as u8 - b'A' + 13) % 26) + b'A') as char
+                        } else {
+                            c
+                        }
+                    }).collect();
+                    return Some(decoded);
+                }
+            }
+            None
+        }
+        _ => None, // CodeBugDetection, SemanticSummary require actual AI
+    }
+}
+
+/// Solve natural language math expressions
+fn solve_nl_math(expr: &str) -> Option<String> {
+    // Normalize: collapse "multiplied by" into "multiplied" so it's one token
+    let normalized = expr.replace("multiplied by", "multiplied");
+    let words: Vec<&str> = normalized.split_whitespace().collect();
+    
+    let word_to_num = |w: &str| -> Option<i64> {
+        match w {
+            "zero" => Some(0), "one" => Some(1), "two" => Some(2),
+            "three" => Some(3), "four" => Some(4), "five" => Some(5),
+            "six" => Some(6), "seven" => Some(7), "eight" => Some(8),
+            "nine" => Some(9), "ten" => Some(10), "eleven" => Some(11),
+            "twelve" => Some(12), "thirteen" => Some(13), "fourteen" => Some(14),
+            "fifteen" => Some(15), "sixteen" => Some(16), "seventeen" => Some(17),
+            "eighteen" => Some(18), "nineteen" => Some(19), "twenty" => Some(20),
+            _ => w.parse::<i64>().ok(),
+        }
+    };
+    
+    // Handle "X squared minus Y"
+    if let Some(sq_pos) = words.iter().position(|&w| w == "squared") {
+        if sq_pos > 0 {
+            if let Some(base) = word_to_num(words[sq_pos - 1]) {
+                let squared = base * base;
+                if sq_pos + 2 < words.len() && words[sq_pos + 1] == "minus" {
+                    if let Some(sub) = word_to_num(words[sq_pos + 2]) {
+                        return Some((squared - sub).to_string());
+                    }
+                }
+                return Some(squared.to_string());
+            }
+        }
+    }
+    
+    // Handle "X op Y" or "X op Y op Z"
+    if words.len() >= 3 {
+        let a = word_to_num(words[0])?;
+        let op1 = words[1];
+        let b = word_to_num(words[2])?;
+        
+        if words.len() >= 5 {
+            let op2 = words[3];
+            let c = word_to_num(words[4])?;
+            // Handle operator precedence: multiplication before addition
+            match (op1, op2) {
+                ("plus", "times" | "multiplied") => return Some((a + b * c).to_string()),
+                ("times" | "multiplied", "plus") => return Some((a * b + c).to_string()),
+                ("plus", "plus") => return Some((a + b + c).to_string()),
+                ("times" | "multiplied", "times" | "multiplied") => return Some((a * b * c).to_string()),
+                ("minus", "times" | "multiplied") => return Some((a - b * c).to_string()),
+                _ => {}
+            }
+        }
+        
+        match op1 {
+            "plus" => return Some((a + b).to_string()),
+            "minus" => return Some((a - b).to_string()),
+            "times" | "multiplied" => return Some((a * b).to_string()),
+            _ => {}
+        }
+    }
+    
+    None
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,7 +226,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Node initialized. Config written to {:?}", config_path);
         }
 
-        Commands::Start { data_dir: _, rpc_bind, p2p_bind, peers } => {
+        Commands::Start { data_dir, rpc_bind, p2p_bind, peers } => {
             tracing::info!("🦀 Starting SmithNode...");
             
             // Parse bind addresses
@@ -56,11 +235,35 @@ async fn main() -> anyhow::Result<()> {
             let p2p_addr: std::net::SocketAddr = p2p_bind.parse()
                 .expect("Invalid P2P bind address (use format: 0.0.0.0:26656)");
             
-            // Initialize state
-            let state = SmithNodeState::new();
+            // Ensure data directory exists
+            std::fs::create_dir_all(&data_dir)?;
             
-            // Start P2P network with state reference
-            let (network, network_handle, mut event_rx) = SmithNodeNetwork::new(p2p_addr.port(), state.clone()).await?;
+            // Initialize state with the user-specified data directory
+            let state = SmithNodeState::with_data_dir(data_dir.clone());
+            
+            // Start P2P network with persistent identity
+            let (mut network, network_handle, mut event_rx) = SmithNodeNetwork::new_with_data_dir(
+                p2p_addr.port(), 
+                state.clone(),
+                Some(&data_dir)
+            ).await?;
+            
+            // Generate node signing key for turbo block authentication
+            let node_keypair_path = data_dir.join("node_key.json");
+            let node_signing_key = if std::path::Path::new(&node_keypair_path).exists() {
+                let key_data = std::fs::read_to_string(&node_keypair_path)?;
+                let key_bytes: Vec<u8> = serde_json::from_str(&key_data)?;
+                ed25519_dalek::SigningKey::from_bytes(&key_bytes.try_into().unwrap_or([0u8; 32]))
+            } else {
+                let mut rng = rand::rngs::OsRng;
+                let key = ed25519_dalek::SigningKey::generate(&mut rng);
+                let key_bytes = key.to_bytes().to_vec();
+                std::fs::write(&node_keypair_path, serde_json::to_string(&key_bytes)?)?;
+                key
+            };
+            let node_pubkey_hex = hex::encode(ed25519_dalek::VerifyingKey::from(&node_signing_key).to_bytes());
+            tracing::info!("🔑 Node block signing key: {}...", &node_pubkey_hex[..16]);
+            network.set_validator_signer(node_pubkey_hex.clone(), node_signing_key);
             
             // Connect to bootstrap peers
             if !peers.is_empty() {
@@ -84,6 +287,7 @@ async fn main() -> anyhow::Result<()> {
             
             // Spawn network event handler
             let state_for_events = state.clone();
+            let _network_for_events = network_handle.clone(); // Kept for future AI messaging on mainnet
             let event_handler = tokio::spawn(async move {
                 while let Some(event) = event_rx.recv().await {
                     match event {
@@ -121,7 +325,7 @@ async fn main() -> anyhow::Result<()> {
                                         last_active_timestamp: v.last_active_timestamp,
                                         last_validation_height: 0,
                                         is_online: true,
-                                        nonce: 0, // State sync resets nonces for safety
+                                        nonce: v.nonce, // Preserve peer's nonce to prevent replay
                                     })
                                 })
                                 .collect();
@@ -167,6 +371,41 @@ async fn main() -> anyhow::Result<()> {
                             // P2P heartbeat received - state is already updated in the network handler
                             tracing::trace!("💓 Presence from validator {}...", &presence.validator_pubkey[..16.min(presence.validator_pubkey.len())]);
                         }
+                        p2p::NetworkEvent::AIMessageReceived(ai_msg) => {
+                            // AI messaging DISABLED on devnet - just log and store
+                            // Focus on: Challenges (Proof of Cognition) + Governance (voting)
+                            let topic = ai_msg.topic.clone().unwrap_or_else(|| "unknown".to_string());
+                            tracing::debug!("📭 AI message received [{}] - storage only (no auto-response on devnet)", topic);
+                            
+                            // Store for history/debugging but don't auto-respond
+                            p2p::store_ai_message(crate::rpc::AIMessageRecord {
+                                message_id: ai_msg.message_hash.clone(),
+                                from: ai_msg.from_validator.clone(),
+                                to: ai_msg.to_validator.clone(),
+                                topic: topic.clone(),
+                                content: ai_msg.content.clone(),
+                                response: ai_msg.response.clone(),
+                                ai_provider: ai_msg.ai_provider.clone().unwrap_or_else(|| "none".to_string()),
+                                model: ai_msg.model.clone().unwrap_or_else(|| "none".to_string()),
+                                timestamp: ai_msg.timestamp,
+                                signature: ai_msg.signature.clone(),
+                                in_reply_to: ai_msg.in_reply_to.clone(),
+                                message_type: ai_msg.message_type.clone(),
+                                block_height: None,
+                                tx_hash: ai_msg.tx_hash.clone(),
+                            });
+                            // NOTE: Auto-response DISABLED - validators focus on challenges & governance
+                        }
+                        p2p::NetworkEvent::RegistrationReceived(reg_msg) => {
+                            tracing::info!("📝 Validator registered via P2P: {}...",
+                                &reg_msg.public_key[..16.min(reg_msg.public_key.len())]);
+                        }
+                        p2p::NetworkEvent::GovernanceReceived(gov_msg) => {
+                            tracing::info!("📋 Governance event received via P2P: {:?}", gov_msg.action);
+                        }
+                        p2p::NetworkEvent::TransferReceived(tx_msg) => {
+                            tracing::debug!("💸 Transfer received via P2P: {} → {}", &tx_msg.from[..16.min(tx_msg.from.len())], &tx_msg.to[..16.min(tx_msg.to.len())]);
+                        }
                     }
                 }
             });
@@ -179,7 +418,8 @@ async fn main() -> anyhow::Result<()> {
             });
 
             // Start RPC server with network handle for broadcasting
-            let (rpc_handle, event_tx) = start_rpc_server(state.clone(), rpc_addr, Some(network_handle)).await?;
+            let network_handle_for_rpc = network_handle.clone();
+            let (rpc_handle, event_tx) = start_rpc_server(state.clone(), rpc_addr, Some(network_handle_for_rpc)).await?;
             
             // Spawn state broadcaster - sends snapshots every second
             let state_for_broadcast = state.clone();
@@ -200,6 +440,7 @@ async fn main() -> anyhow::Result<()> {
                     let challenge_changed = current_challenge_hash != last_challenge_hash;
                     
                     if event_tx.receiver_count() > 0 && (height_changed || challenge_changed) {
+                        let peer_info = p2p::get_local_peer_info();
                         let status = rpc::NodeStatusResponse {
                             height: current_height,
                             state_root: hex::encode(state_for_broadcast.get_state_root()),
@@ -208,6 +449,9 @@ async fn main() -> anyhow::Result<()> {
                             active_validator_count: state_for_broadcast.get_active_validator_count(),
                             has_active_challenge: current_challenge.is_some(),
                             node_version: p2p::SMITH_VERSION.to_string(),
+                            peer_id: peer_info.map(|p| p.peer_id.clone()),
+                            p2p_multiaddrs: peer_info.map(|p| p.get_multiaddrs()).unwrap_or_default(),
+                            bootstrap_peers: p2p::get_bootstrap_peers(),
                         };
 
                         let validators: Vec<rpc::ValidatorInfoResponse> = state_for_broadcast.get_all_validators()
@@ -231,27 +475,55 @@ async fn main() -> anyhow::Result<()> {
                             pending_tx_count: c.pending_tx_hashes.len(),
                             expires_at: c.expires_at,
                             remaining_seconds: c.remaining_time(),
+                            cognitive_puzzle: c.cognitive_puzzle.as_ref().map(rpc::puzzle_to_response),
                         });
-
-                        let snapshot = rpc::StateSnapshot {
-                            status,
-                            validators,
-                            challenge,
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs(),
-                        };
-
-                        let _ = event_tx.send(rpc::StateEvent::Snapshot(snapshot));
-                        last_height = current_height;
                         last_challenge_hash = current_challenge_hash;
+                    }
+                }
+            });
+            
+            // Spawn automatic block producer — TURBO MODE
+            // Blocks are produced every 2 seconds WITHOUT waiting for AI puzzles.
+            // AI is used for: (1) async P2P liveness challenges, (2) governance reasoning.
+            // This makes SmithNode competitive with Solana/Sui block times.
+            let state_for_blocks = state.clone();
+            let network_for_blocks = network_handle.clone();
+            let block_producer_handle = tokio::spawn(async move {
+                // Wait for initial startup
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+                
+                loop {
+                    interval.tick().await;
+                    
+                    // Tick governance to expire stale proposals
+                    state_for_blocks.tick_governance();
+                    
+                    // Only produce blocks if we have validators
+                    let has_validators = state_for_blocks.get_active_validator_count() > 0;
+                    
+                    if has_validators {
+                        // TURBO: Produce block immediately — no puzzle, no waiting
+                        let block_info = state_for_blocks.produce_turbo_block();
+                        if let Some((height, prev_state_root, state_root, challenge_hash, total_supply)) = block_info {
+                            tracing::info!("⚡ Turbo block {} produced (2s)", height);
+                            
+                            // Broadcast the block via P2P
+                            if let Err(e) = network_for_blocks.broadcast_turbo_block(
+                                height, prev_state_root, state_root, challenge_hash, total_supply
+                            ).await {
+                                tracing::warn!("Failed to broadcast turbo block: {}", e);
+                            }
+                        }
                     }
                 }
             });
             
             tracing::info!("✅ Node running - RPC: {}, P2P: {}", rpc_addr, p2p_addr);
             tracing::info!("📡 WebSocket subscriptions available at ws://{}", rpc_addr);
+            tracing::info!("⚡ TURBO block production: every 2 seconds");
+            tracing::info!("🤖 AI used for: governance reasoning + P2P liveness challenges");
             tracing::info!("🤖 Ready for AI agent validators to connect!");
 
             // Wait for shutdown
@@ -262,6 +534,7 @@ async fn main() -> anyhow::Result<()> {
                 _ = p2p_handle => {}
                 _ = event_handler => {}
                 _ = broadcast_handle => {}
+                _ = block_producer_handle => {}
             }
 
             rpc_handle.stop()?;
@@ -288,6 +561,494 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("Keypair written to {:?}", path);
             } else {
                 println!("{}", serde_json::to_string_pretty(&keypair)?);
+            }
+        }
+
+        Commands::Validator { data_dir, keypair, p2p_bind, peers, rpc_bind, ai_provider, ai_api_key, ai_model, ai_endpoint } => {
+            use ed25519_dalek::{SigningKey, Signer, Signature};
+            use sha2::{Sha256, Digest};
+
+            tracing::info!("🤖 Starting SmithNode P2P VALIDATOR...");
+            tracing::info!("   This node will participate directly in P2P consensus");
+            
+            // Load keypair
+            let keypair_data: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(&keypair)
+                    .map_err(|e| anyhow::anyhow!("Failed to read keypair file: {}", e))?
+            )?;
+            
+            let private_key_hex = keypair_data["private_key"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing private_key in keypair file"))?;
+            let public_key_hex = keypair_data["public_key"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing public_key in keypair file"))?;
+            
+            let private_key_bytes: [u8; 32] = hex::decode(private_key_hex)?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid private key length"))?;
+            let signing_key = SigningKey::from_bytes(&private_key_bytes);
+            
+            tracing::info!("🔑 Validator public key: {}...", &public_key_hex[..16]);
+            
+            // Parse addresses
+            let p2p_addr: std::net::SocketAddr = p2p_bind.parse()
+                .expect("Invalid P2P bind address");
+            
+            // Ensure data directory exists
+            std::fs::create_dir_all(&data_dir)?;
+            
+            // Initialize state with the user-specified data directory
+            let state = SmithNodeState::with_data_dir(data_dir.clone());
+            
+            // Start P2P network with persistent identity
+            let (network, network_handle, mut event_rx) = SmithNodeNetwork::new_with_data_dir(
+                p2p_addr.port(), 
+                state.clone(),
+                Some(&data_dir)
+            ).await?;
+            
+            // Connect to bootstrap peers
+            tracing::info!("🔗 Connecting to {} bootstrap peers...", peers.len());
+            for peer in &peers {
+                tracing::info!("   → {}", peer);
+                if let Err(e) = network_handle.dial_peer(peer).await {
+                    tracing::warn!("⚠️ Failed to dial {}: {}", peer, e);
+                }
+            }
+            
+            // Wait for connections and sync state
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            if state.get_height() == 0 {
+                tracing::info!("📥 Requesting state sync from peers...");
+                let _ = network_handle.request_state_sync().await;
+                // Wait for state sync to complete before doing anything
+                for i in 0..10 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    if state.get_height() > 0 || state.get_all_validators().len() > 0 {
+                        tracing::info!("✅ State sync completed after {}s", i + 1);
+                        break;
+                    }
+                }
+            }
+            
+            // Register via P2P gossip broadcast — all nodes apply the same registration
+            // This keeps state in sync across the network (no local-only mutation)
+            let pubkey_bytes: [u8; 32] = hex::decode(public_key_hex)?.try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid public key"))?;
+            let already_registered = state.get_validator(public_key_hex).is_some();
+            if already_registered {
+                tracing::info!("✅ Already registered as validator (via state sync)");
+            } else {
+                tracing::info!("📝 Registering via P2P broadcast...");
+                
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let mut reg_msg_bytes = Vec::with_capacity(40);
+                reg_msg_bytes.extend_from_slice(&pubkey_bytes);
+                reg_msg_bytes.extend_from_slice(&timestamp.to_le_bytes());
+                let reg_sig: Signature = signing_key.sign(&reg_msg_bytes);
+                
+                let reg_msg = p2p::RegisterValidatorMessage {
+                    public_key: public_key_hex.to_string(),
+                    timestamp,
+                    signature: hex::encode(reg_sig.to_bytes()),
+                };
+                
+                // Send registration to P2P layer — it will self-register locally
+                // and queue for gossip retry if mesh isn't ready yet
+                if let Err(e) = network_handle.broadcast_registration(reg_msg).await {
+                    tracing::warn!("⚠️ Failed to send registration: {}", e);
+                }
+                
+                // Wait for propagation (P2P layer retries gossip every 3s)
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                if state.get_validator(public_key_hex).is_some() {
+                    tracing::info!("✅ Registered as validator (confirmed in state)");
+                } else {
+                    tracing::warn!("⚠️ Registration may still be propagating via P2P retries...");
+                }
+            }
+            
+            // Clone what we need for the validation loop
+            let state_for_validator = state.clone();
+            let network_handle_for_validator = network_handle.clone();
+            let public_key_hex_owned = public_key_hex.to_string();
+            let signing_key_clone = signing_key.clone();
+            
+            // Initialize AI client if configured
+            let ai_client: Option<ai::AIClient> = if let Some(ref provider) = ai_provider {
+                let config = match provider.to_lowercase().as_str() {
+                    "ollama" => {
+                        let mut config = ai::AIConfig::ollama(
+                            ai_model.as_deref().unwrap_or("llama2")
+                        );
+                        if let Some(ref endpoint) = ai_endpoint {
+                            config.endpoint = Some(endpoint.clone());
+                        }
+                        config
+                    }
+                    "openai" => {
+                        let key = ai_api_key.as_deref()
+                            .expect("--ai-api-key required for OpenAI");
+                        let mut config = ai::AIConfig::openai(key);
+                        if let Some(ref model) = ai_model {
+                            config.model = model.clone();
+                        }
+                        config
+                    }
+                    "anthropic" => {
+                        let key = ai_api_key.as_deref()
+                            .expect("--ai-api-key required for Anthropic");
+                        let mut config = ai::AIConfig::anthropic(key);
+                        if let Some(ref model) = ai_model {
+                            config.model = model.clone();
+                        }
+                        config
+                    }
+                    "groq" => {
+                        let key = ai_api_key.as_deref()
+                            .expect("--ai-api-key required for Groq");
+                        let mut config = ai::AIConfig::groq(key);
+                        if let Some(ref model) = ai_model {
+                            config.model = model.clone();
+                        }
+                        config
+                    }
+                    "together" => {
+                        let key = ai_api_key.as_deref()
+                            .expect("--ai-api-key required for Together");
+                        ai::AIConfig {
+                            provider: ai::AIProvider::Together,
+                            api_key: Some(key.to_string()),
+                            model: ai_model.clone().unwrap_or_else(|| "meta-llama/Llama-3-70b-chat-hf".to_string()),
+                            endpoint: ai_endpoint.clone(),
+                            max_tokens: 1000,
+                            temperature: 0.3,
+                        }
+                    }
+                    other => {
+                        tracing::error!("❌ Unknown AI provider: '{}'. Supported: ollama, openai, anthropic, groq, together", other);
+                        std::process::exit(1);
+                    }
+                };
+                tracing::info!("🧠 AI solver enabled: provider={}, model={}", provider, config.model);
+                Some(ai::AIClient::new(config))
+            } else {
+                tracing::info!("🔧 No AI provider specified. Using built-in deterministic solver.");
+                tracing::info!("   Tip: Use --ai-provider ollama --ai-model llama2 for real AI solving");
+                None
+            };
+            
+            // Spawn P2P validator loop — TURBO MODE
+            // No more puzzle-solving for blocks. Instead:
+            // 1. Heartbeats (keep active status for turbo block rewards)
+            // 2. Async P2P liveness challenges (prove AI is running)
+            let validator_handle = tokio::spawn(async move {
+                let mut last_heartbeat = std::time::Instant::now();
+                let mut last_liveness_challenge = std::time::Instant::now();
+                
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    
+                    // Send heartbeat every 15 seconds (faster for turbo mode)
+                    if last_heartbeat.elapsed() > std::time::Duration::from_secs(15) {
+                        let height = state_for_validator.get_height();
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        
+                        // Sign presence: pubkey || height || timestamp
+                        let mut msg = Vec::with_capacity(48);
+                        msg.extend_from_slice(&pubkey_bytes);
+                        msg.extend_from_slice(&height.to_le_bytes());
+                        msg.extend_from_slice(&timestamp.to_le_bytes());
+                        let presence_sig: Signature = signing_key_clone.sign(&msg);
+                        
+                        let presence = p2p::PresenceMessage {
+                            validator_pubkey: public_key_hex_owned.clone(),
+                            height,
+                            timestamp,
+                            version: p2p::SMITH_VERSION.to_string(),
+                            signature: hex::encode(presence_sig.to_bytes()),
+                        };
+                        
+                        if let Err(e) = network_handle_for_validator.broadcast_presence(presence).await {
+                            tracing::debug!("Failed to broadcast presence: {}", e);
+                        } else {
+                            tracing::debug!("💓 Heartbeat sent");
+                        }
+                        last_heartbeat = std::time::Instant::now();
+                    }
+                    
+                    // P2P Liveness Challenge: every 30 seconds, challenge a random peer
+                    // This proves AI capability without blocking block production
+                    if last_liveness_challenge.elapsed() > std::time::Duration::from_secs(30) {
+                        // Pick a random peer to challenge
+                        let peers = p2p::get_p2p_validator_tracker().get_online_p2p_validators();
+                        let other_peers: Vec<_> = peers.iter()
+                            .filter(|p| p.public_key != public_key_hex_owned)
+                            .collect();
+                        
+                        if !other_peers.is_empty() {
+                            // Generate a liveness puzzle using AI or built-in
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs();
+                            
+                            // Create a simple challenge seed
+                            let challenge_seed: [u8; 32] = {
+                                use sha2::{Sha256, Digest};
+                                let mut hasher = Sha256::new();
+                                hasher.update(b"liveness");
+                                hasher.update(&pubkey_bytes);
+                                hasher.update(&now.to_le_bytes());
+                                hasher.finalize().into()
+                            };
+                            
+                            // Generate puzzle deterministically from seed
+                            let puzzle = stf::CognitivePuzzle::generate(&challenge_seed, 1);
+                            let puzzle_prompt = puzzle.prompt.clone();
+                            
+                            // Pick random target
+                            let idx = (now as usize) % other_peers.len();
+                            let target = &other_peers[idx];
+                            
+                            // Compute expected answer hash (we'll verify later)
+                            let answer_hash = hex::encode::<[u8; 32]>({
+                                use sha2::{Sha256, Digest};
+                                let mut hasher = Sha256::new();
+                                hasher.update(b"liveness_answer");
+                                hasher.update(&challenge_seed);
+                                hasher.finalize().into()
+                            });
+                            
+                            let challenge_id = hex::encode(&challenge_seed[..16]);
+                            
+                            // Sign the challenge
+                            let mut sig_msg = Vec::new();
+                            sig_msg.extend_from_slice(challenge_id.as_bytes());
+                            sig_msg.extend_from_slice(target.public_key.as_bytes());
+                            let sig: Signature = signing_key_clone.sign(&sig_msg);
+                            
+                            let challenge = p2p::LivenessChallenge {
+                                challenger: public_key_hex_owned.clone(),
+                                target: target.public_key.clone(),
+                                puzzle_prompt,
+                                answer_hash,
+                                challenge_id,
+                                expires_at: now + 30,
+                                signature: hex::encode(sig.to_bytes()),
+                            };
+                            
+                            tracing::info!("🧪 Sending liveness challenge to {}...", 
+                                &target.public_key[..16.min(target.public_key.len())]);
+                            
+                            if let Err(e) = network_handle_for_validator.broadcast_liveness_challenge(challenge).await {
+                                tracing::debug!("Failed to send liveness challenge: {}", e);
+                            }
+                        }
+                        
+                        last_liveness_challenge = std::time::Instant::now();
+                    }
+                }
+            });
+            
+            // Spawn network event handler (same as Start command)
+            let state_for_events = state.clone();
+            let event_handler = tokio::spawn(async move {
+                while let Some(event) = event_rx.recv().await {
+                    match event {
+                        p2p::NetworkEvent::ChallengeReceived(msg) => {
+                            tracing::debug!("📡 P2P Challenge for height {}", msg.challenge.height);
+                        }
+                        p2p::NetworkEvent::ProofReceived(msg) => {
+                            tracing::debug!("📡 P2P Proof from {}...", &msg.response.validator_pubkey[..16]);
+                        }
+                        p2p::NetworkEvent::BlockReceived(msg) => {
+                            tracing::info!("📡 P2P Block {} received", msg.header.height);
+                        }
+                        p2p::NetworkEvent::PeerConnected(peer_id) => {
+                            tracing::info!("🤝 Peer connected: {}", peer_id);
+                        }
+                        p2p::NetworkEvent::PeerDisconnected(peer_id) => {
+                            tracing::info!("👋 Peer disconnected: {}", peer_id);
+                        }
+                        p2p::NetworkEvent::StateReceived(state_msg) => {
+                            tracing::info!("📥 State sync: height={}", state_msg.height);
+                            // Apply state (same as Start command)
+                            let validators: Vec<stf::ValidatorInfo> = state_msg.validators.iter()
+                                .filter_map(|v| {
+                                    let pubkey_bytes = hex::decode(&v.public_key).ok()?;
+                                    if pubkey_bytes.len() != 32 { return None; }
+                                    let mut pubkey = [0u8; 32];
+                                    pubkey.copy_from_slice(&pubkey_bytes);
+                                    Some(stf::ValidatorInfo {
+                                        public_key: pubkey,
+                                        balance: v.balance,
+                                        validations_count: v.validations_count,
+                                        reputation_score: v.reputation_score,
+                                        last_active_timestamp: v.last_active_timestamp,
+                                        last_validation_height: 0,
+                                        is_online: true,
+                                        nonce: v.nonce, // Preserve peer's nonce to prevent replay
+                                    })
+                                })
+                                .collect();
+                            
+                            let state_root_bytes = hex::decode(&state_msg.state_root).unwrap_or_default();
+                            let mut state_root = [0u8; 32];
+                            if state_root_bytes.len() == 32 {
+                                state_root.copy_from_slice(&state_root_bytes);
+                            }
+                            
+                            if state_for_events.apply_peer_state(state_msg.height, state_root, state_msg.total_supply, validators) {
+                                tracing::info!("✅ State synced! Now at height {}", state_msg.height);
+                                
+                                // M2 fix: Merge tx_records from peer (same as Start command)
+                                if !state_msg.tx_records.is_empty() {
+                                    let tx_records: Vec<stf::TxRecord> = state_msg.tx_records.into_iter()
+                                        .map(|tx| stf::TxRecord {
+                                            hash: tx.hash,
+                                            tx_type: tx.tx_type,
+                                            from: tx.from,
+                                            to: tx.to,
+                                            amount: tx.amount,
+                                            status: tx.status,
+                                            timestamp: tx.timestamp,
+                                            height: tx.height,
+                                            validators: tx.validators,
+                                            challenge_hash: tx.challenge_hash,
+                                        })
+                                        .collect();
+                                    state_for_events.merge_tx_records(tx_records);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            
+            // Spawn P2P network
+            let mut network = network;
+            network.set_validator_signer(
+                public_key_hex.to_string(),
+                signing_key.clone(),
+            );
+            let p2p_handle = tokio::spawn(async move {
+                if let Err(e) = network.run().await {
+                    tracing::error!("P2P error: {}", e);
+                }
+            });
+            
+            // Optionally start RPC for monitoring
+            // L2 fix: Also start state broadcaster when RPC is enabled
+            let rpc_handle = if let Some(rpc_addr_str) = rpc_bind {
+                let rpc_addr: std::net::SocketAddr = rpc_addr_str.parse()?;
+                let (handle, event_tx) = start_rpc_server(state.clone(), rpc_addr, Some(network_handle)).await?;
+                tracing::info!("📊 Monitoring RPC: {}", rpc_addr);
+                
+                // L2 fix: Spawn state broadcaster for validator RPC subscribers
+                let state_for_broadcast = state.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+                    let mut last_height = 0u64;
+                    let mut last_challenge_hash: Option<String> = None;
+                    
+                    loop {
+                        interval.tick().await;
+                        if event_tx.receiver_count() == 0 { continue; }
+                        
+                        let current_height = state_for_broadcast.get_height();
+                        let current_challenge = state_for_broadcast.get_current_challenge();
+                        let current_challenge_hash = current_challenge.as_ref().map(|c| hex::encode(c.challenge_hash));
+                        
+                        let height_changed = current_height != last_height;
+                        let challenge_changed = current_challenge_hash != last_challenge_hash;
+                        
+                        if height_changed || challenge_changed {
+                            let peer_info = p2p::get_local_peer_info();
+                            let status = rpc::NodeStatusResponse {
+                                height: current_height,
+                                state_root: hex::encode(state_for_broadcast.get_state_root()),
+                                total_supply: state_for_broadcast.get_total_supply(),
+                                validator_count: state_for_broadcast.get_all_validators().len(),
+                                active_validator_count: state_for_broadcast.get_active_validator_count(),
+                                has_active_challenge: current_challenge.is_some(),
+                                node_version: p2p::SMITH_VERSION.to_string(),
+                                peer_id: peer_info.map(|p| p.peer_id.clone()),
+                                p2p_multiaddrs: peer_info.map(|p| p.get_multiaddrs()).unwrap_or_default(),
+                                bootstrap_peers: p2p::get_bootstrap_peers(),
+                            };
+
+                            let validators: Vec<rpc::ValidatorInfoResponse> = state_for_broadcast.get_all_validators()
+                                .into_iter()
+                                .map(|v| rpc::ValidatorInfoResponse {
+                                    public_key: hex::encode(v.public_key),
+                                    balance: v.balance,
+                                    validations_count: v.validations_count,
+                                    reputation_score: v.reputation_score,
+                                    last_active_timestamp: v.last_active_timestamp,
+                                    is_online: v.is_online,
+                                    nonce: v.nonce,
+                                })
+                                .collect();
+
+                            let challenge = current_challenge.map(|c| rpc::ChallengeResponse {
+                                challenge_hash: hex::encode(c.challenge_hash),
+                                challenge_type: format!("{:?}", c.challenge_type),
+                                height: c.height,
+                                difficulty: c.difficulty,
+                                pending_tx_count: c.pending_tx_hashes.len(),
+                                expires_at: c.expires_at,
+                                remaining_seconds: c.remaining_time(),
+                                cognitive_puzzle: c.cognitive_puzzle.as_ref().map(rpc::puzzle_to_response),
+                            });
+
+                            let snapshot = rpc::StateSnapshot {
+                                status,
+                                validators,
+                                challenge,
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                            };
+
+                            let _ = event_tx.send(rpc::StateEvent::Snapshot(snapshot));
+                            last_height = current_height;
+                            last_challenge_hash = current_challenge_hash;
+                        }
+                    }
+                });
+                
+                Some(handle)
+            } else {
+                None
+            };
+            
+            tracing::info!("══════════════════════════════════════════════════");
+            tracing::info!("✅ P2P VALIDATOR RUNNING");
+            tracing::info!("   Mode: True P2P peer (no RPC dependency)");
+            tracing::info!("   P2P: {}", p2p_addr);
+            tracing::info!("   Validator: {}...", &public_key_hex[..16]);
+            tracing::info!("══════════════════════════════════════════════════");
+
+            // Wait for shutdown
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("Shutting down validator...");
+                }
+                _ = p2p_handle => {}
+                _ = event_handler => {}
+                _ = validator_handle => {}
+            }
+
+            if let Some(h) = rpc_handle {
+                h.stop()?;
             }
         }
     }

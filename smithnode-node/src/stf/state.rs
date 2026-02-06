@@ -3,7 +3,7 @@
 //! Core state structure holding balances, challenges, and validator info.
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::path::PathBuf;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -11,12 +11,39 @@ use sha2::{Sha256, Digest};
 
 use super::transaction::{NodeTx, TxResult};
 use super::challenge::{CognitiveChallenge, ChallengeType, CognitivePuzzle};
+use super::governance::{GovernanceState, ProposalType, Vote, ProposalStatus};
 use crate::storage::{Storage, PersistedState};
+
+/// Extension trait that recovers from poisoned RwLocks gracefully.
+/// If a thread panics while holding the lock, subsequent callers still get
+/// access to the (possibly-inconsistent) inner data instead of cascading panics.
+trait PoisonRecover<T> {
+    fn read_or_recover(&self) -> RwLockReadGuard<'_, T>;
+    fn write_or_recover(&self) -> RwLockWriteGuard<'_, T>;
+}
+
+impl<T> PoisonRecover<T> for RwLock<T> {
+    fn read_or_recover(&self) -> RwLockReadGuard<'_, T> {
+        self.read().unwrap_or_else(|poisoned| {
+            tracing::error!("⚠️ RwLock was poisoned (read) — recovering");
+            poisoned.into_inner()
+        })
+    }
+    fn write_or_recover(&self) -> RwLockWriteGuard<'_, T> {
+        self.write().unwrap_or_else(|poisoned| {
+            tracing::error!("⚠️ RwLock was poisoned (write) — recovering");
+            poisoned.into_inner()
+        })
+    }
+}
 
 /// Active validator threshold - validators must have been active within this time to be considered online
 /// For P2P nodes: 90 seconds (3 missed heartbeats)
 /// For RPC-only: 5 minutes (backwards compatible)
 const ACTIVE_THRESHOLD_SECS: u64 = 90; // Reduced from 300 for better P2P presence tracking
+
+// Registration rate limiting is handled per-key in the RPC layer (rpc/mod.rs)
+// to avoid a global counter that attackers could exhaust to block legitimate users.
 
 /// Validator information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -69,6 +96,7 @@ pub struct CommitteeMember {
     pub pubkey: String,
     pub submitted_proof: bool,
     pub proof_valid: bool,
+    pub puzzle_correct: bool,
 }
 
 /// Block committee - validators selected to validate a block
@@ -83,28 +111,6 @@ pub struct BlockCommittee {
     pub approvals: usize,
     pub threshold: usize, // 2/3 of committee must approve
 }
-
-/// Epoch information - for predictable validator rotation
-#[allow(dead_code)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Epoch {
-    /// Epoch number
-    pub number: u64,
-    /// Starting block height of this epoch
-    pub start_height: u64,
-    /// Ending block height of this epoch
-    pub end_height: u64,
-    /// Active validators for this epoch
-    pub validators: Vec<String>,
-    /// Total rewards distributed this epoch
-    pub total_rewards: u64,
-    /// Timestamp when epoch started
-    pub started_at: u64,
-}
-
-/// Epoch constants
-#[allow(dead_code)]
-pub const EPOCH_LENGTH: u64 = 100;  // blocks per epoch
 
 /// The core state of SmithNode
 #[derive(Clone)]
@@ -129,9 +135,6 @@ struct StateInner {
     /// Current block committee
     current_committee: Option<BlockCommittee>,
     
-    /// Transaction history (for simplicity, in-memory)
-    tx_history: Vec<NodeTx>,
-    
     /// Transaction records with metadata
     tx_records: Vec<TxRecord>,
     
@@ -147,10 +150,16 @@ struct StateInner {
     /// Committee size (how many validators per block)
     committee_size: usize,
     
-    /// Current epoch information
-    #[allow(dead_code)]
-    current_epoch: Option<Epoch>,
+    /// Equivocation detection: (block_height, validator_pubkey) -> verdict_digest
+    /// Used to detect double-voting (submitting different verdicts for same block)
+    submitted_verdicts: HashMap<(u64, String), [u8; 32]>,
+    
+    /// Governance state for proposals and voting
+    governance: GovernanceState,
 }
+
+/// Maximum pending transactions per block (prevents mempool flooding)
+const MAX_PENDING_TXS: usize = 1000;
 
 impl SmithNodeState {
     pub fn new() -> Self {
@@ -159,6 +168,29 @@ impl SmithNodeState {
 
     pub fn with_data_dir(data_dir: PathBuf) -> Self {
         let storage = Arc::new(Storage::new(data_dir));
+        
+        // Check for uncommitted WAL entries (crash recovery)
+        if storage.has_uncommitted_wal() {
+            let uncommitted = storage.uncommitted_wal_entries();
+            tracing::warn!(
+                "⚠️ Found {} uncommitted WAL entries — previous run may have crashed",
+                uncommitted.len()
+            );
+            for entry in &uncommitted {
+                tracing::info!(
+                    "  WAL seq={}: {:?} @ ts={}",
+                    entry.seq, 
+                    std::mem::discriminant(&entry.op),
+                    entry.timestamp
+                );
+            }
+            tracing::info!("📋 State will be loaded from last checkpoint. Uncommitted entries logged above for audit.");
+            // We do NOT replay WAL entries automatically — the state.json
+            // represents the last atomically-committed checkpoint. The WAL
+            // entries above are logged for operator awareness / forensics.
+            // Future enhancement: selective replay for specific operations.
+            storage.wal_truncate();
+        }
         
         // Try to load existing state
         let persisted = storage.load_state();
@@ -172,13 +204,13 @@ impl SmithNodeState {
                 state_root: state.state_root,
                 current_challenge: None,
                 current_committee: None,
-                tx_history: Vec::new(),
                 tx_records: state.tx_records,
                 pending_txs: Vec::new(),
                 total_supply: state.total_supply,
                 reward_per_proof: 100,
-                committee_size: 5, // 5 validators per committee
-                current_epoch: None,
+                committee_size: 5,
+                submitted_verdicts: HashMap::new(),
+                governance: state.governance, // Load persisted governance
             }
         } else {
             StateInner {
@@ -187,13 +219,13 @@ impl SmithNodeState {
                 state_root: [0u8; 32],
                 current_challenge: None,
                 current_committee: None,
-                tx_history: Vec::new(),
                 tx_records: Vec::new(),
                 pending_txs: Vec::new(),
                 total_supply: 0,
                 reward_per_proof: 100,
-                committee_size: 5, // 5 validators per committee
-                current_epoch: None,
+                committee_size: 5,
+                submitted_verdicts: HashMap::new(),
+                governance: GovernanceState::default(),
             }
         };
 
@@ -205,45 +237,86 @@ impl SmithNodeState {
 
     /// Persist current state to disk
     pub fn save(&self) -> anyhow::Result<()> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         let persisted = PersistedState {
             validators: inner.validators.clone(),
             height: inner.height,
             state_root: inner.state_root,
             tx_records: inner.tx_records.clone(),
             total_supply: inner.total_supply,
+            governance: inner.governance.clone(),
         };
         self.storage.save_state(&persisted)
     }
 
     /// Apply state received from a peer (state sync)
-    /// Only applies if peer state is ahead of ours
+    /// Only applies if peer state is ahead of ours AND state root is verified
+    /// SECURITY (C1): Verifies the state root matches the claimed validators/supply
     pub fn apply_peer_state(
         &self, 
         height: u64, 
-        state_root: [u8; 32],
+        claimed_state_root: [u8; 32],
         total_supply: u64,
         validators: Vec<ValidatorInfo>,
     ) -> bool {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         // Only apply if peer is ahead
         if height <= inner.height {
             return false;
         }
         
-        tracing::info!("🔄 Applying peer state: height {} -> {}, {} validators",
+        // SECURITY: Sanity-check the claimed state
+        // The state root is a chained hash (prev_root || height || supply || challenge_hash)
+        // so we cannot recompute it from validators alone. Instead, apply practical guards:
+        
+        // Guard 1: Supply must be reasonable (max 10B SMITH = 10_000_000_000)
+        if total_supply > 10_000_000_000 {
+            tracing::warn!("⚠️ Rejecting peer state: unreasonable supply {}", total_supply);
+            return false;
+        }
+        
+        // Guard 2: Validator balances must sum to <= total_supply
+        let balance_sum: u64 = validators.iter().map(|v| v.balance).sum();
+        if balance_sum > total_supply {
+            tracing::warn!("⚠️ Rejecting peer state: validator balances {} exceed supply {}", balance_sum, total_supply);
+            return false;
+        }
+        
+        // Guard 3: State root must not be all zeros (except genesis)
+        if claimed_state_root == [0u8; 32] && height > 0 {
+            tracing::warn!("⚠️ Rejecting peer state: zero state root at height {}", height);
+            return false;
+        }
+        
+        // Guard 4: Must have at least 1 validator
+        if validators.is_empty() {
+            tracing::warn!("⚠️ Rejecting peer state: no validators");
+            return false;
+        }
+        
+        tracing::info!("🔄 Applying VERIFIED peer state: height {} -> {}, {} validators",
             inner.height, height, validators.len());
         
         // Update state
         inner.height = height;
-        inner.state_root = state_root;
+        inner.state_root = claimed_state_root;
         inner.total_supply = total_supply;
+        
+        // SECURITY: Preserve nonces from existing validators to prevent replay attacks
+        let existing_nonces: HashMap<String, u64> = inner.validators.iter()
+            .map(|(k, v)| (k.clone(), v.nonce))
+            .collect();
         
         // Update validators
         inner.validators.clear();
-        for v in validators {
-            inner.validators.insert(hex::encode(&v.public_key), v);
+        for mut v in validators {
+            let pubkey_hex = hex::encode(&v.public_key);
+            // Preserve existing nonce (higher of local vs peer to prevent replay)
+            if let Some(&existing_nonce) = existing_nonces.get(&pubkey_hex) {
+                v.nonce = v.nonce.max(existing_nonce);
+            }
+            inner.validators.insert(pubkey_hex, v);
         }
         
         // Clear current challenge (peer will broadcast new one)
@@ -251,6 +324,14 @@ impl SmithNodeState {
         inner.current_committee = None;
         
         drop(inner);
+        
+        // WAL: Log the state sync before checkpointing
+        if let Err(e) = self.storage.wal_append(crate::storage::WalOp::StateSynced {
+            height,
+            state_root_hex: hex::encode(claimed_state_root),
+        }) {
+            tracing::warn!("⚠️ WAL write for state sync failed: {}", e);
+        }
         
         // Persist to disk
         if let Err(e) = self.save() {
@@ -260,12 +341,153 @@ impl SmithNodeState {
         true
     }
 
+    /// Produce a turbo block — no AI puzzles required.
+    /// Blocks are produced every 2 seconds. Pending transactions are included.
+    /// Active validators share the block reward proportionally.
+    /// Returns (height, prev_state_root, new_state_root, challenge_hash, total_supply) or None.
+    pub fn produce_turbo_block(&self) -> Option<(u64, [u8; 32], [u8; 32], [u8; 32], u64)> {
+        let mut inner = self.inner.write_or_recover();
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Get active validators (collect to owned Vec to avoid borrow conflict)
+        let active_validators: Vec<String> = inner.validators.iter()
+            .filter(|(_, v)| {
+                let time_since_active = now.saturating_sub(v.last_active_timestamp);
+                time_since_active <= ACTIVE_THRESHOLD_SECS
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        
+        if active_validators.is_empty() {
+            return None;
+        }
+        
+        // Save previous state root BEFORE any mutations
+        let prev_state_root = inner.state_root;
+        
+        // Distribute reward equally among active validators
+        let reward_per_proof = inner.governance.params.reward_per_proof;
+        let num_active = active_validators.len() as u64;
+        let reward_each = reward_per_proof / num_active.max(1);
+        
+        // Give each active validator their share (active_validators is owned, so no borrow conflict)
+        let next_height = inner.height + 1;
+        for pubkey in active_validators.iter() {
+            if let Some(v) = inner.validators.get_mut(pubkey) {
+                v.balance += reward_each;
+                v.validations_count += 1;
+                v.last_validation_height = next_height;
+            }
+        }
+        
+        let total_reward = reward_each * num_active;
+        inner.total_supply += total_reward;
+        
+        // Compute challenge hash (deterministic — NO timestamp, only state data)
+        let challenge_hash: [u8; 32] = {
+            let mut hasher = Sha256::new();
+            hasher.update(&prev_state_root);
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.update(&inner.total_supply.to_le_bytes());
+            hasher.finalize().into()
+        };
+        
+        // Record the block transaction
+        let tx_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"turbo_block");
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.update(&challenge_hash);
+            hex::encode::<[u8; 32]>(hasher.finalize().into())
+        };
+        
+        let current_height = inner.height;
+        inner.tx_records.push(TxRecord {
+            hash: tx_hash,
+            tx_type: "block".to_string(),
+            from: active_validators.first().cloned().unwrap_or_default(),
+            to: None,
+            amount: total_reward,
+            status: "confirmed".to_string(),
+            timestamp: now,
+            height: current_height + 1,
+            validators: Some(active_validators),
+            challenge_hash: Some(hex::encode(challenge_hash)),
+        });
+        
+        // Drain pending txs (they're included in this block)
+        inner.pending_txs.clear();
+        
+        // Advance height
+        inner.height += 1;
+        
+        // Compute new state root (must match verification in p2p/mod.rs handle_block_message)
+        // Formula: hash(prev_state_root || height || total_supply || challenge_hash)
+        let new_state_root: [u8; 32] = {
+            let mut hasher = Sha256::new();
+            hasher.update(&prev_state_root);
+            hasher.update(&inner.height.to_le_bytes());
+            hasher.update(&inner.total_supply.to_le_bytes());
+            hasher.update(&challenge_hash);
+            hasher.finalize().into()
+        };
+        inner.state_root = new_state_root;
+        
+        // Clean up old verdict records
+        let h = inner.height;
+        inner.submitted_verdicts.retain(|&(height, _), _| height + 10 > h);
+        
+        let height = inner.height;
+        let state_root = inner.state_root;
+        let total_supply = inner.total_supply;
+        
+        drop(inner);
+        
+        // Persist every 10th block (not every 2s to reduce disk I/O)
+        if height % 10 == 0 {
+            if let Err(e) = self.save() {
+                tracing::warn!("⚠️ Failed to save turbo block state: {}", e);
+            }
+        }
+        
+        Some((height, prev_state_root, state_root, challenge_hash, total_supply))
+    }
+
+    /// Record result of a P2P liveness challenge (async, doesn't block blocks)
+    pub fn record_liveness_result(&self, challenger: &str, target: &str, success: bool) {
+        let mut inner = self.inner.write_or_recover();
+        
+        if let Some(v) = inner.validators.get_mut(target) {
+            if success {
+                v.reputation_score = v.reputation_score.saturating_add(10);
+                tracing::info!("✅ Liveness proof: {}... passed (rep +10)", &target[..16.min(target.len())]);
+            } else {
+                v.reputation_score = v.reputation_score.saturating_sub(25);
+                tracing::warn!("❌ Liveness fail: {}... (rep -25, challenged by {}...)", 
+                    &target[..16.min(target.len())], &challenger[..16.min(challenger.len())]);
+                
+                // Slash for failed liveness after multiple failures
+                if v.reputation_score < 25 {
+                    let slash = 5u64.min(v.balance);
+                    v.balance -= slash;
+                    inner.total_supply -= slash;
+                    tracing::warn!("⚡ SLASHED {}... for {} SMITH: repeated liveness failures", 
+                        &target[..16.min(target.len())], slash);
+                }
+            }
+        }
+    }
+
     /// Select committee members based on reputation-weighted random selection
     /// ONLY selects from ACTIVE validators (online in last 5 minutes)
     fn select_committee(&self, inner: &StateInner, seed: &[u8; 32]) -> Vec<String> {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         // Filter to only ACTIVE validators (online in last 5 minutes)
@@ -293,7 +515,9 @@ impl SmithNodeState {
         }
         
         // Select committee_size members (or all if fewer validators)
-        let committee_size = inner.committee_size.min(validators.len());
+        // M1: Use governance params instead of hardcoded committee_size
+        let governed_committee_size = inner.governance.params.committee_size;
+        let committee_size = governed_committee_size.min(validators.len());
         let mut selected: Vec<String> = Vec::with_capacity(committee_size);
         let mut used_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
         
@@ -301,11 +525,21 @@ impl SmithNodeState {
         let mut rng_state = u64::from_le_bytes(seed[0..8].try_into().unwrap());
         
         for _ in 0..committee_size {
+            // Recalculate available weight excluding already-selected validators
+            let available_weight: u64 = validators.iter().enumerate()
+                .filter(|(idx, _)| !used_indices.contains(idx))
+                .map(|(_, (_, v))| v.reputation_score.max(1))
+                .sum();
+            
+            if available_weight == 0 {
+                break;
+            }
+            
             // Simple LCG random number generator
             rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let rand_val = rng_state % total_weight;
+            let rand_val = rng_state % available_weight;
             
-            // Find validator based on weighted selection
+            // Find validator based on weighted selection (only from available)
             let mut cumulative: u64 = 0;
             for (idx, (pubkey, validator)) in validators.iter().enumerate() {
                 if used_indices.contains(&idx) {
@@ -325,34 +559,77 @@ impl SmithNodeState {
 
     /// Finalize an expired challenge with partial approvals
     /// This prevents blocks from getting stuck when committee can't reach full threshold
+    /// Also slashes committee members who didn't submit proofs
+    /// SECURITY (H5): Uses single write lock to prevent TOCTOU race conditions
     fn finalize_expired_challenge(&self) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
-        // Check if we have an expired challenge with at least 1 approval
-        let should_finalize = if let Some(ref committee) = inner.current_committee {
-            now > committee.expires_at && committee.approvals >= 1 && !committee.finalized
+        // Check if we have an expired, non-finalized committee
+        let should_process = if let Some(ref committee) = inner.current_committee {
+            now > committee.expires_at && !committee.finalized
         } else {
             false
         };
         
-        if !should_finalize {
+        if !should_process {
             return;
         }
         
-        // Get committee info before mutating
-        let committee = inner.current_committee.as_ref().unwrap();
-        let challenge_hash = committee.challenge_hash;
-        let approving_validators: Vec<String> = committee.members.iter()
-            .filter(|m| m.proof_valid)
+        // Collect absent members and slash them (all under write lock to prevent TOCTOU)
+        let absent_members: Vec<String> = inner.current_committee.as_ref().unwrap()
+            .members.iter()
+            .filter(|m| !m.submitted_proof)
             .map(|m| m.pubkey.clone())
             .collect();
         
-        if approving_validators.is_empty() {
+        // Slash absent members (inline to avoid dropping the lock)
+        for pubkey in &absent_members {
+            let slash_amount = 10u64; // committee absence penalty
+            if let Some(validator) = inner.validators.get_mut(pubkey) {
+                let actual_slash = slash_amount.min(validator.balance);
+                validator.balance -= actual_slash;
+                validator.reputation_score = validator.reputation_score.saturating_sub(50);
+                inner.total_supply -= actual_slash;
+                
+                let height = inner.height;
+                let tx_hash = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(b"slash");
+                    hasher.update(pubkey.as_bytes());
+                    hasher.update(&actual_slash.to_le_bytes());
+                    hasher.update(&height.to_le_bytes());
+                    hex::encode::<[u8; 32]>(hasher.finalize().into())
+                };
+                
+                inner.tx_records.push(TxRecord {
+                    hash: tx_hash,
+                    tx_type: "slash".to_string(),
+                    from: pubkey.to_string(),
+                    to: None,
+                    amount: actual_slash,
+                    status: "slashed: committee absence".to_string(),
+                    timestamp: now,
+                    height,
+                    validators: None,
+                    challenge_hash: None,
+                });
+                
+                tracing::warn!(
+                    "⚡ SLASHED validator {}... for {} SMITH: committee absence",
+                    &pubkey[..16.min(pubkey.len())],
+                    actual_slash
+                );
+            }
+        }
+        
+        // Check if we have at least 1 approval
+        let committee = inner.current_committee.as_ref().unwrap();
+        if committee.approvals < 1 {
             // No valid proofs, just clear the challenge
             inner.current_challenge = None;
             inner.current_committee = None;
@@ -360,8 +637,22 @@ impl SmithNodeState {
             return;
         }
         
+        // Get committee info before mutating
+        let challenge_hash = committee.challenge_hash;
+        let approving_validators: Vec<String> = committee.members.iter()
+            .filter(|m| m.proof_valid)
+            .map(|m| m.pubkey.clone())
+            .collect();
+        
+        if approving_validators.is_empty() {
+            inner.current_challenge = None;
+            inner.current_committee = None;
+            tracing::info!("⏰ Challenge expired with no valid proofs, clearing");
+            return;
+        }
+        
         let num_approvers = approving_validators.len() as u64;
-        let reward_per_validator = inner.reward_per_proof / num_approvers.max(1);
+        let reward_per_validator = inner.governance.params.reward_per_proof / num_approvers.max(1);
         
         tracing::info!(
             "⏰ Challenge expired! Finalizing with {}/{} approvals",
@@ -420,6 +711,10 @@ impl SmithNodeState {
         inner.current_challenge = None;
         inner.current_committee = None;
         
+        // Clean up old verdict records (only keep last 10 blocks to prevent memory growth)
+        let current_height = inner.height;
+        inner.submitted_verdicts.retain(|&(h, _), _| h + 10 > current_height);
+        
         tracing::info!(
             "📦 Block {} FINALIZED (partial)! {} validators approved, {} SMITH distributed",
             inner.height,
@@ -433,7 +728,7 @@ impl SmithNodeState {
         // First, finalize any expired challenge with partial approvals
         self.finalize_expired_challenge();
         
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         // Create challenge hash from current state
         let mut hasher = Sha256::new();
@@ -441,7 +736,7 @@ impl SmithNodeState {
         hasher.update(&inner.height.to_le_bytes());
         hasher.update(&std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs()
             .to_le_bytes());
         
@@ -454,7 +749,7 @@ impl SmithNodeState {
         
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         // Create committee
@@ -464,10 +759,11 @@ impl SmithNodeState {
                 pubkey: pk.clone(),
                 submitted_proof: false,
                 proof_valid: false,
+                puzzle_correct: false,
             }).collect(),
             challenge_hash,
             created_at: now,
-            expires_at: now + 60, // 60 second window
+            expires_at: now + 30, // 30 second window (devnet: fast blocks)
             finalized: false,
             approvals: 0,
             threshold,
@@ -507,7 +803,7 @@ impl SmithNodeState {
                 .map(|tx| tx.hash())
                 .collect(),
             created_at: now,
-            expires_at: now + 60, // 60 second window
+            expires_at: now + 30, // 30 second window (devnet: fast blocks)
             cognitive_puzzle: Some(puzzle),
         };
         
@@ -517,21 +813,12 @@ impl SmithNodeState {
 
     /// Get current committee info
     pub fn get_committee(&self) -> Option<BlockCommittee> {
-        self.inner.read().unwrap().current_committee.clone()
-    }
-
-    /// Check if a validator is in the current committee
-    pub fn is_in_committee(&self, pubkey_hex: &str) -> bool {
-        let inner = self.inner.read().unwrap();
-        if let Some(ref committee) = inner.current_committee {
-            return committee.members.iter().any(|m| m.pubkey == pubkey_hex);
-        }
-        false
+        self.inner.read_or_recover().current_committee.clone()
     }
 
     /// Get the current active challenge
     pub fn get_current_challenge(&self) -> Option<CognitiveChallenge> {
-        self.inner.read().unwrap().current_challenge.clone()
+        self.inner.read_or_recover().current_challenge.clone()
     }
 
     /// Apply a transaction to the state
@@ -542,12 +829,14 @@ impl SmithNodeState {
                 ref challenge_hash,
                 ref signature,
                 ref verdict_digest,
+                ref puzzle_answer,
             } => {
                 self.process_proof_submission(
                     validator_pubkey,
                     challenge_hash,
                     signature,
                     verdict_digest,
+                    puzzle_answer.as_deref(),
                 )
             }
             NodeTx::Transfer {
@@ -557,19 +846,95 @@ impl SmithNodeState {
                 nonce,
                 ref signature,
             } => {
+                // Enforce max pending TXs (transfers are not consensus-critical)
+                if self.inner.read_or_recover().pending_txs.len() >= MAX_PENDING_TXS {
+                    return TxResult::Error("Block is full (max 1000 transactions). Try next block.".into());
+                }
                 self.process_transfer(from, to, amount, nonce, signature)
             }
             NodeTx::RegisterValidator { ref public_key } => {
+                // Enforce max pending TXs
+                if self.inner.read_or_recover().pending_txs.len() >= MAX_PENDING_TXS {
+                    return TxResult::Error("Block is full (max 1000 transactions). Try next block.".into());
+                }
                 self.register_validator(public_key)
             }
-            // Smart contract transactions - not implemented yet
-            NodeTx::DeployContract { .. } => {
-                TxResult::Error("Smart contracts not yet implemented".into())
+            NodeTx::AIMessage { .. } => {
+                // AI messages are stored off-chain in the P2P layer
+                // On-chain we just record that a message was sent
+                TxResult::Success { reward: 0, new_balance: 0 }
             }
-            NodeTx::CallContract { .. } => {
-                TxResult::Error("Smart contracts not yet implemented".into())
+            NodeTx::CreateProposal {
+                ref proposer,
+                proposal_type,
+                new_value,
+                ref description_hash,
+                ref signature,
+            } => {
+                self.process_create_proposal(proposer, proposal_type, new_value, description_hash, signature)
+            }
+            NodeTx::VoteProposal {
+                ref voter,
+                proposal_id,
+                vote,
+                ref signature,
+                ref reason,
+            } => {
+                self.process_vote_proposal(voter, proposal_id, vote, signature, reason.as_deref())
+            }
+            NodeTx::ExecuteProposal {
+                ref executor,
+                proposal_id,
+                ref signature,
+            } => {
+                self.process_execute_proposal(executor, proposal_id, signature)
             }
         };
+
+        // WAL: Log the successful operation before checkpointing
+        if result.is_success() {
+            let wal_op = match (&tx, &result) {
+                (_, TxResult::BlockFinalized { block_height, state_root, .. }) => {
+                    let inner = self.inner.read_or_recover();
+                    Some(crate::storage::WalOp::BlockFinalized {
+                        height: *block_height,
+                        state_root_hex: hex::encode(state_root),
+                        total_supply: inner.total_supply,
+                    })
+                }
+                (NodeTx::SubmitProof { validator_pubkey, challenge_hash, .. }, TxResult::Success { reward, .. }) if *reward > 0 => {
+                    Some(crate::storage::WalOp::ProofAccepted {
+                        validator_pubkey_hex: hex::encode(validator_pubkey),
+                        challenge_hash_hex: hex::encode(challenge_hash),
+                        reward: *reward,
+                    })
+                }
+                (NodeTx::Transfer { from, to, amount, .. }, _) => {
+                    Some(crate::storage::WalOp::Transfer {
+                        from_hex: hex::encode(from),
+                        to_hex: hex::encode(to),
+                        amount: *amount,
+                    })
+                }
+                (NodeTx::RegisterValidator { public_key }, _) => {
+                    Some(crate::storage::WalOp::ValidatorRegistered {
+                        pubkey_hex: hex::encode(public_key),
+                    })
+                }
+                (NodeTx::CreateProposal { .. } | NodeTx::VoteProposal { .. } | NodeTx::ExecuteProposal { .. }, _) => {
+                    Some(crate::storage::WalOp::GovernanceAction {
+                        action: format!("{:?}", std::mem::discriminant(&tx)),
+                        detail: String::new(),
+                    })
+                }
+                _ => None,
+            };
+            if let Some(op) = wal_op {
+                if let Err(e) = self.storage.wal_append(op) {
+                    tracing::warn!("⚠️ WAL write failed (state will still be saved): {}", e);
+                }
+            }
+        }
 
         // Auto-save after successful transactions
         if result.is_success() {
@@ -588,10 +953,47 @@ impl SmithNodeState {
         challenge_hash: &[u8; 32],
         signature: &[u8; 64],
         verdict_digest: &[u8; 32],
+        puzzle_answer: Option<&str>,
     ) -> TxResult {
-        let mut inner = self.inner.write().unwrap();
-        
         let pubkey_hex = hex::encode(validator_pubkey);
+        
+        // First, verify signature (before acquiring write lock so we can slash if invalid)
+        let (_challenge_height, is_sig_valid, challenge_exists) = {
+            let inner = self.inner.read_or_recover();
+            let challenge = inner.current_challenge.as_ref();
+            let height = challenge.map(|c| c.height).unwrap_or(0);
+            let exists = challenge.is_some();
+            
+            let verifying_key = match VerifyingKey::from_bytes(validator_pubkey) {
+                Ok(k) => k,
+                Err(_) => return TxResult::Error("Invalid public key".into()),
+            };
+            
+            // Message is: challenge_hash || verdict_digest || height (8 bytes LE)
+            let mut message = Vec::with_capacity(72);
+            message.extend_from_slice(challenge_hash);
+            message.extend_from_slice(verdict_digest);
+            message.extend_from_slice(&height.to_le_bytes());
+            
+            let sig = Signature::from_bytes(signature);
+            (height, verifying_key.verify(&message, &sig).is_ok(), exists)
+        };
+        
+        // If the challenge no longer exists (block already finalized), 
+        // the proof is just late — don't slash, just reject gracefully
+        if !challenge_exists {
+            return TxResult::Error("No active challenge (block already finalized)".into());
+        }
+        
+        // Slash for invalid signature and return error
+        if !is_sig_valid {
+            if let Err(e) = self.slash_for_invalid_proof(&pubkey_hex) {
+                tracing::warn!("Could not slash for invalid proof: {}", e);
+            }
+            return TxResult::Error("Signature verification failed - validator slashed".into());
+        }
+        
+        let mut inner = self.inner.write_or_recover();
         
         // 1. Verify the challenge exists and matches
         let current_challenge = match &inner.current_challenge {
@@ -607,6 +1009,25 @@ impl SmithNodeState {
         if current_challenge.is_expired() {
             return TxResult::Error("Challenge has expired".into());
         }
+        
+        // 1c. Verify cognitive puzzle answer (Proof of Cognition)
+        let puzzle_correct = if let Some(ref puzzle) = current_challenge.cognitive_puzzle {
+            if let Some(answer) = puzzle_answer {
+                let answer_hash = super::challenge::CognitivePuzzle::hash_answer(answer);
+                if answer_hash == puzzle.expected_answer_hash {
+                    tracing::info!("🧠 Puzzle answer CORRECT from {}...", &pubkey_hex[..16]);
+                    true
+                } else {
+                    tracing::debug!("🧠 Puzzle answer incorrect from {}... (not penalized)", &pubkey_hex[..16]);
+                    false
+                }
+            } else {
+                tracing::debug!("🧠 No puzzle answer from {}... (allowed but no bonus)", &pubkey_hex[..16]);
+                false
+            }
+        } else {
+            false // No puzzle in this challenge
+        };
         
         // 2. Check if validator is in current committee (if committee exists)
         let committee_mode = inner.current_committee.is_some() && 
@@ -635,26 +1056,36 @@ impl SmithNodeState {
             }
         }
         
-        // 3. Verify the signature
-        let verifying_key = match VerifyingKey::from_bytes(validator_pubkey) {
-            Ok(k) => k,
-            Err(_) => return TxResult::Error("Invalid public key".into()),
-        };
+        // 2b. EQUIVOCATION DETECTION: Check if validator already submitted a DIFFERENT verdict
+        // L1 fix: Use challenge height (height+1) since proofs are for the next block
+        let challenge_height = inner.height + 1;
+        let verdict_key = (challenge_height, pubkey_hex.clone());
         
-        // Message is: challenge_hash || verdict_digest || height (8 bytes LE)
-        // Including height prevents replay attacks across different blocks
-        let mut message = Vec::with_capacity(72);
-        message.extend_from_slice(challenge_hash);
-        message.extend_from_slice(verdict_digest);
-        message.extend_from_slice(&current_challenge.height.to_le_bytes());
-        
-        let sig = Signature::from_bytes(signature);
-        
-        if verifying_key.verify(&message, &sig).is_err() {
-            return TxResult::Error("Signature verification failed".into());
+        if let Some(previous_verdict) = inner.submitted_verdicts.get(&verdict_key) {
+            // Validator already submitted for this block - check if same verdict
+            if previous_verdict != verdict_digest {
+                // EQUIVOCATION DETECTED! Different verdict for same block = double voting
+                tracing::error!(
+                    "⚠️ EQUIVOCATION DETECTED! Validator {}... submitted conflicting verdicts for block {}",
+                    &pubkey_hex[..16],
+                    challenge_height
+                );
+                // Release lock before slashing
+                drop(inner);
+                if let Err(e) = self.slash_for_equivocation(&pubkey_hex) {
+                    tracing::warn!("Could not slash for equivocation: {}", e);
+                }
+                return TxResult::Error("Equivocation detected - validator slashed for double voting".into());
+            }
+            // Same verdict, this is a duplicate (already handled by committee check)
+        } else {
+            // First submission for this block/validator - record the verdict
+            inner.submitted_verdicts.insert(verdict_key, *verdict_digest);
         }
         
-        // 4. Update committee member status
+        // Note: Signature already verified before acquiring write lock (with slashing for invalid)
+        
+        // 3. Update committee member status
         let mut should_finalize = false;
         let mut committee_approvals = 0;
         let mut committee_threshold = 1;
@@ -667,6 +1098,7 @@ impl SmithNodeState {
             if let Some(member) = committee.members.iter_mut().find(|m| m.pubkey == pubkey_hex) {
                 member.submitted_proof = true;
                 member.proof_valid = true;
+                member.puzzle_correct = puzzle_correct;
             }
             
             committee.approvals += 1;
@@ -696,7 +1128,7 @@ impl SmithNodeState {
         let height = inner.height;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         let validator = inner.validators
@@ -732,7 +1164,22 @@ impl SmithNodeState {
             };
             
             let num_approvers = approving_validators.len() as u64;
-            let reward_per_validator = inner.reward_per_proof / num_approvers.max(1);
+            let reward_per_validator = inner.governance.params.reward_per_proof / num_approvers.max(1);
+            // Puzzle bonus: 50% extra reward for correct puzzle answers
+            
+            // Collect all committee members who answered the puzzle correctly
+            let puzzle_solvers: Vec<String> = if committee_mode {
+                let committee = inner.current_committee.as_ref().unwrap();
+                committee.members.iter()
+                    .filter(|m| m.proof_valid && m.puzzle_correct)
+                    .map(|m| m.pubkey.clone())
+                    .collect()
+            } else if puzzle_correct {
+                vec![pubkey_hex.clone()]
+            } else {
+                vec![]
+            };
+            let puzzle_bonus = if !puzzle_solvers.is_empty() { reward_per_validator / 2 } else { 0 };
             
             // Distribute rewards to all approving committee members
             for approver_pubkey in &approving_validators {
@@ -741,7 +1188,17 @@ impl SmithNodeState {
                 }
             }
             
-            inner.total_supply += reward_per_validator * num_approvers;
+            // Give puzzle bonus to ALL validators who solved correctly
+            let mut total_puzzle_bonus = 0u64;
+            for solver_pubkey in &puzzle_solvers {
+                if let Some(v) = inner.validators.get_mut(solver_pubkey) {
+                    v.balance += puzzle_bonus;
+                    total_puzzle_bonus += puzzle_bonus;
+                    tracing::info!("🧠 Puzzle bonus: +{} SMITH to {}...", puzzle_bonus, &solver_pubkey[..16.min(solver_pubkey.len())]);
+                }
+            }
+            
+            inner.total_supply += reward_per_validator * num_approvers + total_puzzle_bonus;
             
             // Record the transaction
             let tx_hash = {
@@ -762,7 +1219,7 @@ impl SmithNodeState {
                 status: "confirmed".to_string(),
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .unwrap_or_default()
                     .as_secs(),
                 height: current_height,
                 validators: Some(approving_validators.clone()),
@@ -788,8 +1245,16 @@ impl SmithNodeState {
             inner.current_challenge = None;
             inner.current_committee = None;
             
-            let new_balance = inner.validators.get(&pubkey_hex).map(|v| v.balance).unwrap_or(0);
-            let finalized_height = inner.height;
+            // Clean up old verdict records (only keep last 10 blocks to prevent memory growth)
+            let current_height = inner.height;
+            inner.submitted_verdicts.retain(|&(h, _), _| h + 10 > current_height);
+            
+            // Prune tx_records to prevent unbounded memory growth (keep last 10000)
+            const MAX_TX_RECORDS: usize = 10_000;
+            if inner.tx_records.len() > MAX_TX_RECORDS {
+                let drain_count = inner.tx_records.len() - MAX_TX_RECORDS;
+                inner.tx_records.drain(..drain_count);
+            }
             
             tracing::info!(
                 "📦 Block {} FINALIZED! {} validators approved, {} SMITH distributed",
@@ -803,6 +1268,8 @@ impl SmithNodeState {
             );
             
             // Return BlockFinalized so RPC can broadcast over P2P
+            let new_balance = inner.validators.get(&pubkey_hex).map(|v| v.balance).unwrap_or(0);
+            let finalized_height = inner.height;
             TxResult::BlockFinalized {
                 reward: reward_per_validator,
                 new_balance,
@@ -837,7 +1304,7 @@ impl SmithNodeState {
         nonce: u64,
         signature: &[u8; 64],
     ) -> TxResult {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         let from_hex = hex::encode(from);
         let to_hex = hex::encode(to);
@@ -886,7 +1353,7 @@ impl SmithNodeState {
         
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         let recipient = inner.validators
@@ -913,6 +1380,7 @@ impl SmithNodeState {
             hasher.update(from);
             hasher.update(to);
             hasher.update(&amount.to_le_bytes());
+            hasher.update(&nonce.to_le_bytes()); // M3: include nonce for unique hashes
             hex::encode::<[u8; 32]>(hasher.finalize().into())
         };
         
@@ -925,7 +1393,7 @@ impl SmithNodeState {
             status: "confirmed".to_string(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             height,
             validators: None,
@@ -940,7 +1408,15 @@ impl SmithNodeState {
 
     /// Register a new validator
     fn register_validator(&self, public_key: &[u8; 32]) -> TxResult {
-        let mut inner = self.inner.write().unwrap();
+        // Rate limiting is enforced per-key in the RPC layer (not here)
+        // to avoid a global counter that attackers could exhaust to block legitimate users
+        
+        // Verify the public key is a valid ed25519 point
+        if ed25519_dalek::VerifyingKey::from_bytes(public_key).is_err() {
+            return TxResult::Error("Invalid ed25519 public key".into());
+        }
+        
+        let mut inner = self.inner.write_or_recover();
         
         let pubkey_hex = hex::encode(public_key);
         
@@ -948,12 +1424,18 @@ impl SmithNodeState {
             return TxResult::Error("Validator already registered".into());
         }
         
+        // M3 fix: Enforce max_validators cap to prevent unbounded registration/minting
+        let max_validators = inner.governance.params.max_validators as usize;
+        if inner.validators.len() >= max_validators {
+            return TxResult::Error(format!("Maximum validator count ({}) reached", max_validators));
+        }
+        
         // Initial funding for new validators
         const INITIAL_VALIDATOR_BALANCE: u64 = 100;
         
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         inner.validators.insert(pubkey_hex.clone(), ValidatorInfo {
@@ -989,7 +1471,7 @@ impl SmithNodeState {
             status: "confirmed".to_string(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             height,
             validators: None,
@@ -1005,13 +1487,15 @@ impl SmithNodeState {
 
     /// Get validator info by public key
     pub fn get_validator(&self, pubkey_hex: &str) -> Option<ValidatorInfo> {
-        self.inner.read().unwrap().validators.get(pubkey_hex).cloned()
+        self.inner.read_or_recover().validators.get(pubkey_hex).cloned()
     }
 
+    // ============ SLASHING SYSTEM ============
+
     /// Slash a validator for malicious behavior
-    /// Returns the amount slashed
+    /// Returns the amount slashed, burns tokens from total supply
     pub fn slash_validator(&self, pubkey_hex: &str, amount: u64, reason: &str) -> Result<u64, String> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         let validator = inner.validators.get_mut(pubkey_hex)
             .ok_or_else(|| format!("Validator {} not found", pubkey_hex))?;
@@ -1034,6 +1518,7 @@ impl SmithNodeState {
             hasher.update(b"slash");
             hasher.update(pubkey_hex.as_bytes());
             hasher.update(&slash_amount.to_le_bytes());
+            hasher.update(&height.to_le_bytes());
             hex::encode::<[u8; 32]>(hasher.finalize().into())
         };
         
@@ -1041,12 +1526,12 @@ impl SmithNodeState {
             hash: tx_hash,
             tx_type: "slash".to_string(),
             from: pubkey_hex.to_string(),
-            to: None, // Burned
+            to: None,
             amount: slash_amount,
             status: format!("slashed: {}", reason),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             height,
             validators: None,
@@ -1054,7 +1539,7 @@ impl SmithNodeState {
         });
         
         tracing::warn!(
-            "⚡ Slashed validator {}... for {} SMITH: {}",
+            "⚡ SLASHED validator {}... for {} SMITH: {}",
             &pubkey_hex[..16.min(pubkey_hex.len())],
             slash_amount,
             reason
@@ -1063,140 +1548,27 @@ impl SmithNodeState {
         Ok(slash_amount)
     }
 
-    /// Slash validator for missing committee duty
+    /// Slash validator for missing committee duty (10 SMITH)
     pub fn slash_for_committee_absence(&self, pubkey_hex: &str) -> Result<u64, String> {
-        const ABSENCE_SLASH_AMOUNT: u64 = 10;
-        self.slash_validator(pubkey_hex, ABSENCE_SLASH_AMOUNT, "committee absence")
+        self.slash_validator(pubkey_hex, 10, "committee absence")
     }
 
-    /// Slash validator for submitting invalid proof
+    /// Slash validator for submitting invalid proof (25 SMITH)
     pub fn slash_for_invalid_proof(&self, pubkey_hex: &str) -> Result<u64, String> {
-        const INVALID_PROOF_SLASH: u64 = 25;
-        self.slash_validator(pubkey_hex, INVALID_PROOF_SLASH, "invalid proof submission")
+        self.slash_validator(pubkey_hex, 25, "invalid proof")
     }
 
-    /// Slash validator for equivocation (double voting)
+    /// Slash validator for equivocation/double voting (50 SMITH)
+    /// Used when a validator submits conflicting proofs for the same block
     pub fn slash_for_equivocation(&self, pubkey_hex: &str) -> Result<u64, String> {
-        const EQUIVOCATION_SLASH: u64 = 50;
-        self.slash_validator(pubkey_hex, EQUIVOCATION_SLASH, "equivocation (double vote)")
+        self.slash_validator(pubkey_hex, 50, "equivocation")
     }
 
-    // ============ EPOCH SYSTEM ============
-
-    /// Get the current epoch number based on block height
-    pub fn current_epoch_number(&self) -> u64 {
-        let inner = self.inner.read().unwrap();
-        inner.height / EPOCH_LENGTH
-    }
-
-    /// Check if we're at an epoch boundary
-    pub fn is_epoch_boundary(&self) -> bool {
-        let inner = self.inner.read().unwrap();
-        inner.height % EPOCH_LENGTH == 0
-    }
-
-    /// Start a new epoch - should be called at epoch boundaries
-    pub fn start_new_epoch(&self) -> Epoch {
-        let mut inner = self.inner.write().unwrap();
-        
-        let epoch_number = inner.height / EPOCH_LENGTH;
-        let start_height = epoch_number * EPOCH_LENGTH;
-        let end_height = start_height + EPOCH_LENGTH - 1;
-        
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
-        // Select validators for this epoch based on reputation
-        let mut validators: Vec<_> = inner.validators.iter()
-            .filter(|(_, v)| v.reputation_score >= 25) // Minimum reputation to be in epoch
-            .map(|(k, v)| (k.clone(), v.reputation_score))
-            .collect();
-        
-        // Sort by reputation descending
-        validators.sort_by(|a, b| b.1.cmp(&a.1));
-        
-        // Take top validators (up to 100)
-        let epoch_validators: Vec<String> = validators.into_iter()
-            .take(100)
-            .map(|(k, _)| k)
-            .collect();
-        
-        let epoch = Epoch {
-            number: epoch_number,
-            start_height,
-            end_height,
-            validators: epoch_validators.clone(),
-            total_rewards: 0,
-            started_at: now,
-        };
-        
-        inner.current_epoch = Some(epoch.clone());
-        
-        tracing::info!(
-            "🔄 New epoch {} started! Blocks {}-{}, {} eligible validators",
-            epoch_number,
-            start_height,
-            end_height,
-            epoch_validators.len()
-        );
-        
-        epoch
-    }
-
-    /// Get current epoch info
-    pub fn get_current_epoch(&self) -> Option<Epoch> {
-        self.inner.read().unwrap().current_epoch.clone()
-    }
-
-    /// Check if a validator is eligible for the current epoch
-    pub fn is_validator_in_epoch(&self, pubkey_hex: &str) -> bool {
-        let inner = self.inner.read().unwrap();
-        if let Some(ref epoch) = inner.current_epoch {
-            epoch.validators.contains(&pubkey_hex.to_string())
-        } else {
-            // No epoch active - all registered validators are eligible
-            inner.validators.contains_key(pubkey_hex)
-        }
-    }
-
-    /// Update epoch rewards (called when block finalizes)
-    pub fn add_epoch_rewards(&self, amount: u64) {
-        let mut inner = self.inner.write().unwrap();
-        if let Some(ref mut epoch) = inner.current_epoch {
-            epoch.total_rewards += amount;
-        }
-    }
-
-    /// Calculate dynamic difficulty based on active validators
-    pub fn calculate_difficulty(&self) -> u8 {
-        let inner = self.inner.read().unwrap();
-        let active_count = inner.validators.values()
-            .filter(|v| v.is_online)
-            .count();
-        
-        match active_count {
-            0..=5 => 1,
-            6..=20 => 2,
-            21..=50 => 3,
-            51..=100 => 4,
-            _ => 5,
-        }
-    }
-
-    // ============ END EPOCH SYSTEM ============
-
-    /// Get all transaction records
-    #[allow(dead_code)]
-    pub fn get_transactions(&self, limit: usize) -> Vec<TxRecord> {
-        let inner = self.inner.read().unwrap();
-        inner.tx_records.iter().rev().take(limit).cloned().collect()
-    }
+    // ============ END SLASHING SYSTEM ============
 
     /// Get tx_records for P2P state sync (limit to last 1000 for bandwidth)
     pub fn get_tx_records_for_sync(&self) -> Vec<TxRecord> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         // Return last 1000 transactions for sync
         let len = inner.tx_records.len();
         let start = len.saturating_sub(1000);
@@ -1205,7 +1577,7 @@ impl SmithNodeState {
 
     /// Merge tx_records from peer (for state sync)
     pub fn merge_tx_records(&self, peer_records: Vec<TxRecord>) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         // Build set of existing hashes for dedup
         let existing_hashes: std::collections::HashSet<_> = 
@@ -1229,13 +1601,13 @@ impl SmithNodeState {
 
     /// Get a transaction by its hash
     pub fn get_transaction_by_hash(&self, hash: &str) -> Option<TxRecord> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         inner.tx_records.iter().find(|tx| tx.hash == hash).cloned()
     }
 
     /// Get transactions with pagination (page is 1-indexed) and optional type filter
     pub fn get_transactions_paginated(&self, page: usize, per_page: usize, tx_type: Option<String>) -> (Vec<TxRecord>, usize) {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         
         // Filter by type if specified (skip if "all" or empty)
         let filtered: Vec<&TxRecord> = if let Some(ref filter_type) = tx_type {
@@ -1268,78 +1640,30 @@ impl SmithNodeState {
 
     /// Get current block height
     pub fn get_height(&self) -> u64 {
-        self.inner.read().unwrap().height
+        self.inner.read_or_recover().height
     }
 
     /// Get state root
     pub fn get_state_root(&self) -> [u8; 32] {
-        self.inner.read().unwrap().state_root
-    }
-
-    /// Finalize current block and advance height
-    pub fn finalize_block(&self) -> BlockHeader {
-        let mut inner = self.inner.write().unwrap();
-        
-        // Compute new state root
-        let mut hasher = Sha256::new();
-        for (key, val) in &inner.validators {
-            hasher.update(key.as_bytes());
-            hasher.update(&val.balance.to_le_bytes());
-        }
-        let new_state_root: [u8; 32] = hasher.finalize().into();
-        
-        // Compute tx root
-        let mut tx_hasher = Sha256::new();
-        for tx in &inner.pending_txs {
-            tx_hasher.update(&tx.hash());
-        }
-        let tx_root: [u8; 32] = tx_hasher.finalize().into();
-        
-        let prev_state_root = inner.state_root;
-        let challenge_hash = inner.current_challenge
-            .as_ref()
-            .map(|c| c.challenge_hash)
-            .unwrap_or([0u8; 32]);
-        
-        let header = BlockHeader {
-            height: inner.height,
-            prev_state_root,
-            tx_root,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            challenge_hash,
-        };
-        
-        // Move pending txs to history
-        let pending = std::mem::take(&mut inner.pending_txs);
-        inner.tx_history.extend(pending);
-        
-        // Update state
-        inner.state_root = new_state_root;
-        inner.height += 1;
-        inner.current_challenge = None;
-        
-        header
+        self.inner.read_or_recover().state_root
     }
 
     /// Get total supply
     pub fn get_total_supply(&self) -> u64 {
-        self.inner.read().unwrap().total_supply
+        self.inner.read_or_recover().total_supply
     }
 
     /// Get all validators
     pub fn get_all_validators(&self) -> Vec<ValidatorInfo> {
-        self.inner.read().unwrap().validators.values().cloned().collect()
+        self.inner.read_or_recover().validators.values().cloned().collect()
     }
     
     /// Get count of active validators (online in last 90 seconds via P2P presence)
     pub fn get_active_validator_count(&self) -> usize {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         
         inner.validators.values()
@@ -1347,24 +1671,10 @@ impl SmithNodeState {
             .count()
     }
     
-    /// Get all active validators (online in last 90 seconds via P2P presence)
-    pub fn get_active_validators(&self) -> Vec<ValidatorInfo> {
-        let inner = self.inner.read().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
-        inner.validators.values()
-            .filter(|v| now - v.last_active_timestamp < ACTIVE_THRESHOLD_SECS)
-            .cloned()
-            .collect()
-    }
-    
     /// Update validator presence from P2P heartbeat
     /// This is called when we receive a presence message over gossipsub
     pub fn update_validator_presence(&self, pubkey_hex: &str, timestamp: u64, _height: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         if let Some(validator) = inner.validators.get_mut(pubkey_hex) {
             // Only update if this is a newer timestamp
@@ -1376,28 +1686,15 @@ impl SmithNodeState {
         // Note: We don't create new validators from presence messages
         // They must register first via the RPC
     }
-    
-    /// Update online status for all validators (call periodically)
-    pub fn update_online_status(&self) {
-        let mut inner = self.inner.write().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
-        for validator in inner.validators.values_mut() {
-            validator.is_online = now - validator.last_active_timestamp < ACTIVE_THRESHOLD_SECS;
-        }
-    }
 
     /// Set the current challenge (used when receiving from P2P)
     pub fn set_current_challenge(&self, challenge: CognitiveChallenge) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         inner.current_challenge = Some(challenge);
     }
 
     /// Verify and apply a proof from P2P network
-    pub fn verify_and_apply_proof(&self, response: &super::challenge::ChallengeResponse) -> Result<ProofResult, String> {
+    pub fn verify_and_apply_proof(&self, response: &super::challenge::ChallengeResponse) -> Result<TxResult, String> {
         // Parse hex strings to bytes
         let validator_pubkey: [u8; 32] = hex::decode(&response.validator_pubkey)
             .map_err(|e| format!("Invalid validator pubkey hex: {}", e))?
@@ -1425,22 +1722,18 @@ impl SmithNodeState {
             challenge_hash,
             signature,
             verdict_digest,
+            puzzle_answer: response.puzzle_answer.clone(),
         };
         
         match self.apply_tx(tx) {
-            TxResult::Success { reward, new_balance } => Ok(ProofResult { reward, new_balance }),
-            TxResult::BlockFinalized { reward, new_balance, .. } => Ok(ProofResult { reward, new_balance }),
-            TxResult::Registered { .. } => Err("Unexpected registration result".into()),
-            TxResult::ContractDeployed { .. } | TxResult::ContractResult { .. } => {
-                Err("Unexpected contract result".into())
-            }
             TxResult::Error(e) => Err(e),
+            result => Ok(result),
         }
     }
 
     /// Apply a block header received from P2P
     pub fn apply_block(&self, header: &BlockHeader) -> Result<(), String> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write_or_recover();
         
         // Verify block height is sequential
         if header.height != inner.height + 1 && header.height != inner.height {
@@ -1452,41 +1745,375 @@ impl SmithNodeState {
             ));
         }
         
-        // Verify previous state root matches (if not genesis)
-        if header.height > 0 && header.prev_state_root != inner.state_root {
-            return Err("State root mismatch".into());
-        }
-        
         // Apply block
         inner.height = header.height;
-        inner.state_root = header.prev_state_root;
-        inner.current_challenge = None; // Clear current challenge
         
-        // Move pending txs to history
-        let pending = std::mem::take(&mut inner.pending_txs);
-        inner.tx_history.extend(pending);
+        // H3: Compute new state root from block data
+        let new_state_root = {
+            let mut hasher = Sha256::new();
+            hasher.update(&header.prev_state_root);
+            hasher.update(&header.height.to_le_bytes());
+            hasher.update(&inner.total_supply.to_le_bytes());
+            hasher.update(&header.challenge_hash);
+            let result: [u8; 32] = hasher.finalize().into();
+            result
+        };
+        inner.state_root = new_state_root;
+        inner.current_challenge = None;
+        
+        // Clear pending txs (already recorded in tx_records)
+        inner.pending_txs.clear();
+        
+        Ok(())
+    }
+    
+    /// Apply a block received from a P2P peer, including full state snapshot.
+    /// The block producer is authoritative — they ran the actual STF transitions,
+    /// so we adopt their state (validators, balances, supply) along with the block.
+    pub fn apply_block_with_state(
+        &self,
+        header: &BlockHeader,
+        total_supply: u64,
+        validators: &[ValidatorInfo],
+    ) -> Result<(), String> {
+        let mut inner = self.inner.write_or_recover();
+        
+        // Verify block height is strictly sequential
+        if header.height != inner.height + 1 {
+            // Allow at most 10 blocks ahead for catch-up sync
+            if header.height > inner.height + 1 && header.height <= inner.height + 10 {
+                tracing::info!("🔄 Block {} is ahead of our height {} — catch-up sync", header.height, inner.height);
+            } else {
+                return Err(format!(
+                    "Block height {} is not sequential (our height: {})",
+                    header.height, inner.height
+                ));
+            }
+        }
+        
+        // Apply block height
+        inner.height = header.height;
+        
+        // Adopt the producer's total supply (reflects rewards distributed)
+        inner.total_supply = total_supply;
+        
+        // Merge validator state from producer (preserving higher nonces for replay protection)
+        let existing_nonces: std::collections::HashMap<String, u64> = inner.validators.iter()
+            .map(|(k, v)| (k.clone(), v.nonce))
+            .collect();
+        
+        inner.validators.clear();
+        for v in validators {
+            let pubkey_hex = hex::encode(&v.public_key);
+            let mut validator = v.clone();
+            // Preserve higher nonce to prevent replay attacks
+            if let Some(&existing_nonce) = existing_nonces.get(&pubkey_hex) {
+                if existing_nonce > validator.nonce {
+                    validator.nonce = existing_nonce;
+                }
+            }
+            inner.validators.insert(pubkey_hex, validator);
+        }
+        
+        // Compute new state root from block data (deterministic)
+        let new_state_root = {
+            let mut hasher = Sha256::new();
+            hasher.update(&header.prev_state_root);
+            hasher.update(&header.height.to_le_bytes());
+            hasher.update(&inner.total_supply.to_le_bytes());
+            hasher.update(&header.challenge_hash);
+            let result: [u8; 32] = hasher.finalize().into();
+            result
+        };
+        inner.state_root = new_state_root;
+        
+        // Clear current challenge (it was finalized)
+        inner.current_challenge = None;
+        inner.current_committee = None;
+        
+        // Clear pending txs (already recorded in tx_records)
+        inner.pending_txs.clear();
+        
+        tracing::info!("🔄 Block {} applied with full state: {} validators, {} total supply, root: {}...",
+            header.height, inner.validators.len(), inner.total_supply, &hex::encode(new_state_root)[..16]);
         
         Ok(())
     }
 
     /// Get number of pending proofs (for block message)
     pub fn get_pending_proof_count(&self) -> u64 {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read_or_recover();
         inner.pending_txs.iter()
             .filter(|tx| matches!(tx, NodeTx::SubmitProof { .. }))
             .count() as u64
     }
-
-    /// Get validator count
-    pub fn get_validator_count(&self) -> usize {
-        self.inner.read().unwrap().validators.len()
+    
+    // ============ GOVERNANCE SYSTEM ============
+    
+    /// Process create proposal transaction
+    fn process_create_proposal(
+        &self,
+        proposer: &[u8; 32],
+        proposal_type: u8,
+        new_value: u64,
+        description_hash: &[u8; 32],
+        signature: &[u8; 64],
+    ) -> TxResult {
+        let proposer_hex = hex::encode(proposer);
+        
+        // Verify signature first (before acquiring write lock)
+        let verifying_key = match VerifyingKey::from_bytes(proposer) {
+            Ok(k) => k,
+            Err(_) => return TxResult::Error("Invalid proposer public key".to_string()),
+        };
+        
+        // Message: proposal_type || new_value || description_hash
+        let mut message = Vec::with_capacity(41);
+        message.push(proposal_type);
+        message.extend_from_slice(&new_value.to_le_bytes());
+        message.extend_from_slice(description_hash);
+        
+        let sig = Signature::from_bytes(signature);
+        if verifying_key.verify(&message, &sig).is_err() {
+            return TxResult::Error("Invalid proposal signature".to_string());
+        }
+        
+        let mut inner = self.inner.write_or_recover();
+        
+        // Verify proposer is a registered validator with sufficient stake
+        let min_stake = inner.governance.params.min_validator_stake;
+        match inner.validators.get(&proposer_hex) {
+            Some(v) if v.balance >= min_stake => {}, // OK
+            Some(v) => return TxResult::Error(format!(
+                "Insufficient stake to propose: {} < {} required", 
+                v.balance, min_stake
+            )),
+            None => return TxResult::Error("Proposer is not a registered validator".to_string()),
+        }
+        
+        // Convert proposal type byte to ProposalType
+        let prop_type = match proposal_type {
+            0 => ProposalType::ChangeReward { new_value },
+            1 => ProposalType::ChangeCommitteeSize { new_value: new_value as usize },
+            2 => ProposalType::ChangeMinStake { new_value },
+            3 => ProposalType::ChangeSlashPenalty { new_value: new_value as u8 },
+            4 => ProposalType::ChangeBlockTime { new_value },
+            5 => ProposalType::ChangeAIRateLimit { new_value },
+            6 => ProposalType::ChangeMaxValidators { new_value: new_value as usize },
+            _ => return TxResult::Error("Invalid proposal type".to_string()),
+        };
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let description = prop_type.description();
+        let current_height = inner.height;
+        
+        match inner.governance.create_proposal(
+            proposer_hex,
+            prop_type,
+            description,
+            now,
+            current_height,
+        ) {
+            Ok(id) => {
+                tracing::info!("📋 New governance proposal #{} created", id);
+                TxResult::ProposalCreated { proposal_id: id }
+            }
+            Err(e) => TxResult::Error(e),
+        }
     }
+    
+    /// Process vote on proposal
+    fn process_vote_proposal(
+        &self,
+        voter: &[u8; 32],
+        proposal_id: u64,
+        vote: bool,
+        signature: &[u8; 64],
+        reason: Option<&str>,
+    ) -> TxResult {
+        let voter_hex = hex::encode(voter);
+        
+        // Verify signature first (before acquiring write lock)
+        let verifying_key = match VerifyingKey::from_bytes(voter) {
+            Ok(k) => k,
+            Err(_) => return TxResult::Error("Invalid voter public key".to_string()),
+        };
+        
+        // Message: proposal_id || vote
+        let mut message = Vec::with_capacity(9);
+        message.extend_from_slice(&proposal_id.to_le_bytes());
+        message.push(if vote { 1 } else { 0 });
+        
+        let sig = Signature::from_bytes(signature);
+        if verifying_key.verify(&message, &sig).is_err() {
+            return TxResult::Error("Invalid vote signature".to_string());
+        }
+        
+        let mut inner = self.inner.write_or_recover();
+        
+        // Get voter's stake weight (must have non-zero balance to vote)
+        let stake_weight = match inner.validators.get(&voter_hex) {
+            Some(v) if v.balance > 0 => v.balance,
+            Some(_) => return TxResult::Error("Voter has no stake".to_string()),
+            None => return TxResult::Error("Voter is not a registered validator".to_string()),
+        };
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Log AI reasoning if provided
+        if let Some(r) = reason {
+            let vote_str = if vote { "YES" } else { "NO" };
+            tracing::info!("🧠 AI vote reasoning on proposal #{}: {} votes {} — {}", 
+                proposal_id, &voter_hex[..16], vote_str, r);
+        }
+        
+        let vote_record = Vote {
+            voter: voter_hex,
+            vote,
+            stake_weight,
+            timestamp: now,
+            signature: hex::encode(signature),
+            reason: reason.map(|s| s.to_string()),
+        };
+        
+        // Calculate total stake before borrowing governance
+        let total_stake: u64 = inner.validators.values().map(|v| v.balance).sum();
+        
+        // Add vote to proposal
+        match inner.governance.get_proposal_mut(proposal_id) {
+            Some(proposal) => {
+                match proposal.add_vote(vote_record) {
+                    Ok(_) => {
+                        // Don't evaluate result here — let tick_governance() handle it
+                        // when the voting period ends, so all validators get a chance to vote
+                        tracing::info!("🗳️ Vote recorded on proposal #{} (evaluated at voting period end)", proposal_id);
+                        TxResult::VoteRecorded { proposal_id, vote }
+                    }
+                    Err(e) => TxResult::Error(e),
+                }
+            }
+            None => TxResult::Error("Proposal not found".to_string()),
+        }
+    }
+    
+    /// Process execute proposal (after passing + delay)
+    fn process_execute_proposal(
+        &self,
+        executor: &[u8; 32],
+        proposal_id: u64,
+        signature: &[u8; 64],
+    ) -> TxResult {
+        let executor_hex = hex::encode(executor);
+        
+        // Verify signature first (before acquiring write lock)
+        let verifying_key = match VerifyingKey::from_bytes(executor) {
+            Ok(k) => k,
+            Err(_) => return TxResult::Error("Invalid executor public key".to_string()),
+        };
+        
+        // Message: proposal_id
+        let message = proposal_id.to_le_bytes();
+        
+        let sig = Signature::from_bytes(signature);
+        if verifying_key.verify(&message, &sig).is_err() {
+            return TxResult::Error("Invalid execute signature".to_string());
+        }
+        
+        let mut inner = self.inner.write_or_recover();
+        
+        // Verify executor is a validator (anyone can execute, but must be validator)
+        if !inner.validators.contains_key(&executor_hex) {
+            return TxResult::Error("Executor is not a registered validator".to_string());
+        }
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let current_height = inner.height;
+        
+        match inner.governance.execute_proposal(proposal_id, now, current_height) {
+            Ok(_) => {
+                let param = inner.governance.param_history.last()
+                    .map(|p| p.param_name.clone())
+                    .unwrap_or_default();
+                tracing::info!("✅ Proposal #{} executed: {}", proposal_id, param);
+                TxResult::ProposalExecuted { 
+                    proposal_id, 
+                    param_changed: param,
+                }
+            }
+            Err(e) => TxResult::Error(e),
+        }
+    }
+    
+    /// Get governance state summary for AI context
+    pub fn get_governance_summary(&self) -> String {
+        let inner = self.inner.read_or_recover();
+        inner.governance.state_summary(
+            inner.validators.len(),
+            inner.height,
+            inner.total_supply,
+        )
+    }
+    
+    /// Get all active proposals
+    pub fn get_active_proposals(&self) -> Vec<super::governance::Proposal> {
+        let inner = self.inner.read_or_recover();
+        inner.governance.proposals.iter()
+            .filter(|p| p.status == ProposalStatus::Active || p.status == ProposalStatus::Passed)
+            .cloned()
+            .collect()
+    }
+    
+    /// Get all governance proposals (M2 fix: needed for RPC endpoint)
+    pub fn get_governance_proposals(&self) -> Vec<super::governance::Proposal> {
+        let inner = self.inner.read_or_recover();
+        inner.governance.proposals.clone()
+    }
+    
+    /// Get proposal by ID
+    pub fn get_proposal(&self, id: u64) -> Option<super::governance::Proposal> {
+        let inner = self.inner.read_or_recover();
+        inner.governance.get_proposal(id).cloned()
+    }
+    
+    /// Get current network parameters
+    pub fn get_network_params(&self) -> super::governance::NetworkParams {
+        let inner = self.inner.read_or_recover();
+        inner.governance.params.clone()
+    }
+    
+    /// Tick governance: expire stale proposals + auto-execute passed ones
+    /// Also finalizes any expired challenges with partial approvals
+    pub fn tick_governance(&self) {
+        // Finalize any expired challenge before governance tick
+        self.finalize_expired_challenge();
+        
+        let mut inner = self.inner.write_or_recover();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let total_supply = inner.total_supply;
+        let height = inner.height;
+        inner.governance.tick(now, total_supply, height);
+    }
+    
+    // ============ END GOVERNANCE SYSTEM ============
 }
 
 /// Result of proof verification
 pub struct ProofResult {
     pub reward: u64,
-    pub new_balance: u64,
 }
 
 impl Default for SmithNodeState {

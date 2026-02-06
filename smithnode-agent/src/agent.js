@@ -5,9 +5,11 @@
  * - Polling for new challenges
  * - Solving cognitive challenges
  * - Signing and submitting proofs
+ * - Auto-update checking
  */
 
 import { signMessage, bytesToHex, hexToBytes } from './crypto.js';
+import { checkNetworkVersions, autoUpdateFromNetwork } from './updater.js';
 import crypto from 'crypto';
 
 export class SmithNodeAgent {
@@ -19,7 +21,9 @@ export class SmithNodeAgent {
     this.isRunning = false;
     this.lastChallengeHash = null;
     this.lastPresenceTime = 0; // Track last heartbeat
+    this.lastUpdateCheck = 0; // Track last update check
     this.PRESENCE_INTERVAL = 30000; // Send heartbeat every 30 seconds
+    this.UPDATE_CHECK_INTERVAL = 300000; // Check for updates every 5 minutes
     this.stats = {
       challengesSolved: 0,
       totalRewards: 0,
@@ -120,9 +124,62 @@ export class SmithNodeAgent {
     }
   }
 
+  /**
+   * Check for updates from the P2P network
+   * Runs periodically - auto-updates if verified by trusted admin
+   */
+  async checkForUpdates() {
+    const now = Date.now();
+    if (now - this.lastUpdateCheck < this.UPDATE_CHECK_INTERVAL) {
+      return; // Not time yet
+    }
+    
+    try {
+      this.lastUpdateCheck = now;
+      
+      // Check for verified updates from trusted admins
+      const result = await checkNetworkVersions(this.rpcUrl);
+      
+      if (result.updateAvailable) {
+        if (result.verified) {
+          // Verified update from trusted admin - auto-update!
+          console.log(`\n🚀 VERIFIED UPDATE AVAILABLE!`);
+          console.log(`   Current: ${result.currentVersion}`);
+          console.log(`   New: ${result.newestVersion}`);
+          console.log(`   Verified by trusted admin: ✅`);
+          
+          if (result.mandatory) {
+            console.log(`   ⚠️ MANDATORY - Auto-updating now...`);
+          } else {
+            console.log(`   Auto-updating...`);
+          }
+          
+          // Perform auto-update with restart
+          await autoUpdateFromNetwork(this.rpcUrl, {
+            autoRestart: true,
+            onlyMandatory: false,
+          });
+          // Note: process will exit and restart after successful update
+          
+        } else {
+          // Unverified update - just notify
+          console.log(`\n⚠️ UPDATE AVAILABLE (unverified)`);
+          console.log(`   Your node version: ${result.currentVersion}`);
+          console.log(`   Newest on network: ${result.newestVersion}`);
+          console.log(`   ⚠️ Waiting for verified upgrade from trusted admin...`);
+        }
+      }
+    } catch (e) {
+      // Update check failure is not critical
+    }
+  }
+
   async pollAndValidate() {
     // Send heartbeat if needed
     await this.sendHeartbeat();
+    
+    // Check for updates periodically
+    await this.checkForUpdates();
     
     // Get current status for block height
     const status = await this.rpc('smithnode_status', []);

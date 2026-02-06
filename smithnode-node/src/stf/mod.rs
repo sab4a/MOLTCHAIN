@@ -4,16 +4,15 @@
 //! - Accepts AI validation proofs
 //! - Rewards validators with tokens
 //! - Manages the cognitive challenge system
+//! - Handles governance proposals and voting
 
 mod state;
 mod transaction;
 mod challenge;
-mod fraud;
+mod governance;
 
-#[allow(unused_imports)]
-pub use state::{SmithNodeState, ValidatorInfo, BlockHeader, ProofResult, TxRecord, Epoch, EPOCH_LENGTH};
+pub use state::{SmithNodeState, ValidatorInfo, BlockHeader, TxRecord};
 pub use transaction::{NodeTx, TxResult};
-pub use challenge::{CognitiveChallenge, ChallengeResponse};
-#[allow(unused_imports)]
-pub use fraud::{FraudProof, FraudType, FraudEvidence, FraudVerificationResult, FraudProofManager, FRAUD_PROOF_WINDOW};
-
+pub use challenge::{CognitiveChallenge, ChallengeResponse, CognitivePuzzle, PuzzleType};
+// Governance types - used by RPC and state
+pub use governance::{GovernanceState, NetworkParams, Proposal, ProposalType, ProposalStatus, Vote, ProposalStats};

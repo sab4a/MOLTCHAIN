@@ -145,6 +145,78 @@ export async function getDevnetNodeVersion() {
 }
 
 /**
+ * Check network for newer node versions via P2P version tracking
+ * This helps validators stay updated with the network majority
+ * Now includes verified upgrade announcements from trusted admins
+ * 
+ * @param {string} rpcUrl - RPC endpoint URL
+ * @returns {Promise<{updateAvailable: boolean, currentVersion: string, newestVersion: string|null, networkVersions: object, verified: boolean}>}
+ */
+export async function checkNetworkVersions(rpcUrl = DEVNET_RPC) {
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'smithnode_checkUpdate',
+        params: [],
+      }),
+    });
+    const json = await response.json();
+    
+    if (json.result) {
+      const { 
+        current_version, 
+        newest_version, 
+        update_available, 
+        network_versions, 
+        download_url,
+        checksum,
+        mandatory,
+        release_notes,
+        verified 
+      } = json.result;
+      
+      if (update_available) {
+        console.log(`\n🚀 Network Update Available!`);
+        console.log(`   Current version: ${current_version}`);
+        console.log(`   Newest on network: ${newest_version}`);
+        
+        if (verified) {
+          console.log(`   ✅ VERIFIED by trusted admin`);
+          if (download_url) console.log(`   Download: ${download_url}`);
+          if (checksum) console.log(`   Checksum: ${checksum}`);
+          if (mandatory) console.log(`   ⚠️ MANDATORY UPGRADE`);
+          if (release_notes) console.log(`   Notes: ${release_notes}`);
+        } else {
+          console.log(`   ⚠️ Unverified (no trusted admin signature)`);
+        }
+        console.log(`   Network versions: ${JSON.stringify(network_versions)}`);
+      }
+      
+      return {
+        updateAvailable: update_available,
+        currentVersion: current_version,
+        newestVersion: newest_version,
+        networkVersions: network_versions,
+        downloadUrl: download_url,
+        checksum,
+        mandatory: mandatory || false,
+        releaseNotes: release_notes,
+        verified: verified || false,
+      };
+    }
+    
+    return { updateAvailable: false, currentVersion: null, newestVersion: null, networkVersions: {}, verified: false };
+  } catch (error) {
+    console.error('Failed to check network versions:', error.message);
+    return { updateAvailable: false, currentVersion: null, newestVersion: null, networkVersions: {}, verified: false };
+  }
+}
+
+/**
  * Check for Rust binary updates (for node)
  */
 export async function checkBinaryUpdates() {
@@ -428,6 +500,145 @@ this.checkInterval = options.checkInterval || 2 * 60 * 1000; // 2 minutes
   }
 }
 
+/**
+ * Perform verified P2P update with checksum verification
+ * This downloads from admin-signed URLs and verifies SHA256 checksum
+ * 
+ * @param {object} updateInfo - Result from checkNetworkVersions()
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export async function performVerifiedUpdate(updateInfo) {
+  const { downloadUrl, checksum, newestVersion, verified, mandatory } = updateInfo;
+  
+  if (!verified) {
+    console.log('⚠️ Update not verified by trusted admin, skipping auto-update');
+    return { success: false, error: 'Not verified' };
+  }
+  
+  if (!downloadUrl) {
+    console.log('⚠️ No download URL for this platform');
+    return { success: false, error: 'No download URL' };
+  }
+  
+  console.log(`\n🔄 Downloading verified update v${newestVersion}...`);
+  console.log(`   URL: ${downloadUrl}`);
+  if (checksum) console.log(`   Expected SHA256: ${checksum}`);
+  
+  try {
+    // Download to temp file
+    const tempPath = path.join(process.env.TMPDIR || '/tmp', `smithnode-update-${newestVersion}`);
+    
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`);
+    }
+    
+    const buffer = Buffer.from(await response.arrayBuffer());
+    
+    // Verify checksum if provided
+    if (checksum) {
+      const crypto = await import('crypto');
+      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+      
+      if (hash !== checksum.toLowerCase()) {
+        console.error(`❌ Checksum mismatch!`);
+        console.error(`   Expected: ${checksum}`);
+        console.error(`   Got:      ${hash}`);
+        return { success: false, error: 'Checksum mismatch' };
+      }
+      console.log('✅ Checksum verified!');
+    }
+    
+    // Write to temp file
+    fs.writeFileSync(tempPath, buffer);
+    fs.chmodSync(tempPath, 0o755); // Make executable
+    
+    // Determine install location
+    const installDir = path.join(process.env.HOME || '', '.smithnode', 'bin');
+    if (!fs.existsSync(installDir)) {
+      fs.mkdirSync(installDir, { recursive: true });
+    }
+    
+    const binaryPath = path.join(installDir, 'smithnode');
+    
+    // Backup old binary
+    if (fs.existsSync(binaryPath)) {
+      const backupPath = `${binaryPath}.backup`;
+      fs.copyFileSync(binaryPath, backupPath);
+      console.log(`📦 Backed up old binary to ${backupPath}`);
+    }
+    
+    // Install new binary
+    fs.copyFileSync(tempPath, binaryPath);
+    fs.unlinkSync(tempPath);
+    
+    console.log(`✅ Installed v${newestVersion} to ${binaryPath}`);
+    
+    return { success: true, path: binaryPath, version: newestVersion };
+    
+  } catch (error) {
+    console.error('❌ Update failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Auto-update agent: Check network, download if verified, restart
+ * Call this periodically from the agent main loop
+ * 
+ * @param {string} rpcUrl - RPC endpoint URL
+ * @param {object} options - { autoRestart: boolean, mandatory: boolean }
+ */
+export async function autoUpdateFromNetwork(rpcUrl, options = {}) {
+  const { autoRestart = true, onlyMandatory = false } = options;
+  
+  try {
+    const updateInfo = await checkNetworkVersions(rpcUrl);
+    
+    if (!updateInfo.updateAvailable) {
+      return { updated: false };
+    }
+    
+    if (!updateInfo.verified) {
+      console.log('⏳ Update available but not verified by trusted admin');
+      return { updated: false, reason: 'not_verified' };
+    }
+    
+    if (onlyMandatory && !updateInfo.mandatory) {
+      console.log('⏳ Update available but not mandatory, skipping');
+      return { updated: false, reason: 'not_mandatory' };
+    }
+    
+    console.log(`\n🚀 Auto-updating to v${updateInfo.newestVersion}...`);
+    if (updateInfo.mandatory) {
+      console.log('⚠️ This is a MANDATORY update');
+    }
+    
+    const result = await performVerifiedUpdate(updateInfo);
+    
+    if (result.success) {
+      console.log('✅ Update successful!');
+      
+      if (autoRestart) {
+        console.log('🔄 Restarting in 3 seconds...');
+        setTimeout(() => {
+          // Exit with code 0 - process manager will restart
+          process.exit(0);
+        }, 3000);
+      }
+      
+      return { updated: true, version: updateInfo.newestVersion };
+    } else {
+      console.error('❌ Auto-update failed:', result.error);
+      return { updated: false, error: result.error };
+    }
+    
+  } catch (error) {
+    console.error('❌ Auto-update error:', error.message);
+    return { updated: false, error: error.message };
+  }
+}
+
 export default {
   getCurrentVersion,
   getLatestVersion,
@@ -438,5 +649,8 @@ export default {
   installBinaryUpdate,
   checkAllUpdates,
   getDevnetNodeVersion,
+  checkNetworkVersions,
+  performVerifiedUpdate,
+  autoUpdateFromNetwork,
   AutoUpdater
 };

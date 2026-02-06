@@ -30,5 +30,5 @@ EXPOSE 26658 26656
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://127.0.0.1:26658 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"smithnode_status","params":[],"id":1}' || exit 1
 
-# Run node with public binding
-CMD ["smithnode", "start", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0:26656"]
+# Run node with persistent data directory
+CMD ["smithnode", "start", "--data-dir", "/root/.smithnode", "--rpc-bind", "0.0.0.0:26658", "--p2p-bind", "0.0.0.0:26656"]
