@@ -65,4 +65,5 @@ multi-validator-keys.json
 npm-debug.log*
 *.old
 *.new
-*.bak
+*.baksmithnode-linux-x64
+smithnode-darwin-arm64
