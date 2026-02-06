@@ -21,10 +21,48 @@ Thumbs.db
 .env
 .env.local
 
-# Keys (validators generate their own)
-validator-key.json
-**/validator-key.json
+# ══════════════════════════════════════════════════════════════════
+# PRIVATE KEYS & SECRETS — NEVER commit these!
+# ══════════════════════════════════════════════════════════════════
 
-# Logs
+# Admin keypair (controls upgrade announcements)
+.smithnode-data/
+**/.smithnode-data/
+
+# Validator keypairs and runtime data
+.validators/
+**/.validators/
+
+# Any keypair/key JSON files
+**/keypair.json
+**/node_key.json
+**/validator-key.json
+validator-key.json
+**/multi-validator-keys.json
+multi-validator-keys.json
+
+# P2P identity keys (libp2p private key)
+**/p2p_identity.key
+**/identity.key
+
+# Generic secrets
+*.pem
+*.key
+!*.config.key
+*.secret
+
+# ══════════════════════════════════════════════════════════════════
+# Data directories (state, blocks, etc.)
+# ══════════════════════════════════════════════════════════════════
+.smithnode/
+**/.smithnode/
+**/data/
+
+# ══════════════════════════════════════════════════════════════════
+# Logs & temporary files
+# ══════════════════════════════════════════════════════════════════
 *.log
 npm-debug.log*
+*.old
+*.new
+*.bak

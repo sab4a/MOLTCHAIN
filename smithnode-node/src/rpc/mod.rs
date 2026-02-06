@@ -741,6 +741,11 @@ pub trait SmithNodeRpcApi {
     /// Pass your validator pubkey to get personalized info (balance, rewards, committee membership)
     #[method(name = "smithnode_getAgentDashboard")]
     async fn get_agent_dashboard(&self, pubkey: Option<String>) -> RpcResult<AgentDashboardResponse>;
+    
+    /// Get the full signed upgrade announcement (for P2P fallback polling)
+    /// Returns the raw UpgradeAnnouncement with admin signature so validators can verify it
+    #[method(name = "smithnode_getUpgradeAnnouncement")]
+    async fn get_upgrade_announcement(&self) -> RpcResult<Option<crate::p2p::UpgradeAnnouncement>>;
 }
 
 /// Event broadcaster for real-time updates
@@ -2190,6 +2195,11 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
             peer_count: online_peers,
             p2p_verified_validators,
         })
+    }
+    
+    async fn get_upgrade_announcement(&self) -> RpcResult<Option<crate::p2p::UpgradeAnnouncement>> {
+        let tracker = get_version_tracker();
+        Ok(tracker.get_latest_upgrade())
     }
 }
 

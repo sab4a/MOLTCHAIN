@@ -1582,9 +1582,10 @@ impl SmithNodeNetwork {
                     }
                 } else {
                     tracing::warn!(
-                        "⚠️ Block {} has no producer signature — accepting for backward compatibility",
+                        "⚠️ REJECTING block {}: no producer signature (unsigned blocks are no longer accepted)",
                         msg.header.height
                     );
+                    return;
                 }
                 
                 // Verify block header and update state

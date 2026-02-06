@@ -175,6 +175,8 @@ pub const VOTING_PERIOD_SECS: u64 = 5;         // 5 seconds to vote (mainnet: 86
 pub const EXECUTION_DELAY_SECS: u64 = 3;       // 3 seconds after passing before execution (mainnet: 43200 = 12h)
 pub const MIN_QUORUM_PERCENT: u8 = 33;         // At least 33% of total stake must vote
 pub const MAX_ACTIVE_PROPOSALS: usize = 10;    // Maximum concurrent active proposals
+pub const MAX_COMPLETED_PROPOSALS: usize = 200; // Keep last 200 completed proposals, prune older
+pub const MAX_PARAM_HISTORY: usize = 500;       // Keep last 500 param change records
 
 impl Proposal {
     pub fn new(
@@ -565,6 +567,50 @@ impl GovernanceState {
                     }
                 }
             }
+        }
+        
+        // Phase 3: Prune old completed proposals and param_history to prevent unbounded growth
+        self.prune_completed();
+    }
+    
+    /// Remove old completed proposals (Executed/Expired/Failed/Rejected) beyond the retention limit.
+    /// Keeps all Active and Passed proposals intact. Also caps param_history length.
+    fn prune_completed(&mut self) {
+        // Count completed (terminal-state) proposals
+        let completed_count = self.proposals.iter()
+            .filter(|p| matches!(p.status, 
+                ProposalStatus::Executed | ProposalStatus::Expired | 
+                ProposalStatus::Failed | ProposalStatus::Cancelled))
+            .count();
+        
+        if completed_count > MAX_COMPLETED_PROPOSALS {
+            let to_remove = completed_count - MAX_COMPLETED_PROPOSALS;
+            let mut removed = 0;
+            // Remove oldest completed proposals first (they're at the front of the Vec)
+            self.proposals.retain(|p| {
+                if removed >= to_remove {
+                    return true;
+                }
+                if matches!(p.status, 
+                    ProposalStatus::Executed | ProposalStatus::Expired | 
+                    ProposalStatus::Failed | ProposalStatus::Cancelled) 
+                {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
+            if removed > 0 {
+                tracing::debug!("🧹 Pruned {} old completed proposals (kept {})", removed, self.proposals.len());
+            }
+        }
+        
+        // Cap param_history length — keep the most recent entries
+        if self.param_history.len() > MAX_PARAM_HISTORY {
+            let excess = self.param_history.len() - MAX_PARAM_HISTORY;
+            self.param_history.drain(..excess);
+            tracing::debug!("🧹 Pruned {} old param_history entries", excess);
         }
     }
     

@@ -196,6 +196,44 @@ fn solve_nl_math(expr: &str) -> Option<String> {
     None
 }
 
+/// Poll the sequencer's RPC for a signed upgrade announcement.
+/// This is the fallback when gossipsub doesn't deliver upgrade messages.
+/// Returns the full UpgradeAnnouncement (with admin signature) so we can verify locally.
+async fn poll_sequencer_for_upgrade(rpc_url: &str) -> anyhow::Result<Option<p2p::UpgradeAnnouncement>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()?;
+    
+    let rpc_payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "smithnode_getUpgradeAnnouncement",
+        "params": [],
+        "id": 1
+    });
+    
+    let response = client.post(rpc_url).json(&rpc_payload).send().await?;
+    let body: serde_json::Value = response.json().await?;
+    
+    if let Some(error) = body.get("error") {
+        return Err(anyhow::anyhow!("RPC error: {}", error));
+    }
+    
+    let result = body.get("result");
+    if result.is_none() || result == Some(&serde_json::Value::Null) {
+        return Ok(None);
+    }
+    
+    let announcement: p2p::UpgradeAnnouncement = serde_json::from_value(result.unwrap().clone())?;
+    
+    // Verify the admin signature locally — don't trust the sequencer blindly
+    if !announcement.verify() {
+        tracing::warn!("📡 RPC fallback: upgrade from sequencer failed signature verification");
+        return Ok(None);
+    }
+    
+    Ok(Some(announcement))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize logging
@@ -693,7 +731,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("══════════════════════════════════════════════════");
         }
 
-        Commands::Validator { data_dir, keypair, p2p_bind, peers, rpc_bind, ai_provider, ai_api_key, ai_model, ai_endpoint } => {
+        Commands::Validator { data_dir, keypair, p2p_bind, peers, rpc_bind, ai_provider, ai_api_key, ai_model, ai_endpoint, sequencer_rpc } => {
             use ed25519_dalek::{SigningKey, Signer, Signature};
             use sha2::{Sha256, Digest};
 
@@ -1173,6 +1211,7 @@ async fn main() -> anyhow::Result<()> {
             let state_for_update = state.clone();
             let data_dir_for_update = data_dir.clone();
             let p2p_port_for_update = p2p_addr.port();
+            let sequencer_rpc_for_update = sequencer_rpc.clone();
             let auto_update_handle = tokio::spawn(async move {
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
                 
@@ -1187,7 +1226,29 @@ async fn main() -> anyhow::Result<()> {
                     interval.tick().await;
                     
                     let tracker = p2p::get_version_tracker();
-                    if let Some(upgrade) = tracker.get_latest_upgrade() {
+                    let mut upgrade_opt = tracker.get_latest_upgrade();
+                    
+                    // ── RPC FALLBACK: If gossipsub didn't deliver the upgrade, poll sequencer RPC ──
+                    if upgrade_opt.is_none() {
+                        if let Some(ref rpc_url) = sequencer_rpc_for_update {
+                            match poll_sequencer_for_upgrade(rpc_url).await {
+                                Ok(Some(upgrade)) => {
+                                    tracing::info!("📡 RPC fallback: discovered upgrade v{} from sequencer", upgrade.version);
+                                    // Record it in the version tracker so P2P code also knows
+                                    tracker.record_upgrade(upgrade.clone());
+                                    upgrade_opt = Some(upgrade);
+                                }
+                                Ok(None) => {
+                                    // No upgrade available from sequencer
+                                }
+                                Err(e) => {
+                                    tracing::debug!("📡 RPC fallback poll failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if let Some(upgrade) = upgrade_opt {
                         // Skip if we already tried this version
                         if applied_version.as_ref() == Some(&upgrade.version) {
                             continue;

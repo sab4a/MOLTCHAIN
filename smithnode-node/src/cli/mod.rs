@@ -80,6 +80,12 @@ pub enum Commands {
         /// AI endpoint URL (for ollama: http://localhost:11434, or custom endpoints)
         #[arg(long)]
         ai_endpoint: Option<String>,
+        
+        /// Sequencer RPC URL for upgrade polling fallback (e.g. https://smithnode-rpc.fly.dev)
+        /// When P2P gossipsub doesn't deliver upgrade announcements, validators
+        /// will poll this URL to discover available upgrades.
+        #[arg(long)]
+        sequencer_rpc: Option<String>,
     },
     
     /// Generate a new validator keypair
