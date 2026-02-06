@@ -303,6 +303,13 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("🔑 Node block signing key: {}...", &node_pubkey_hex[..16]);
             network.set_validator_signer(node_pubkey_hex.clone(), node_signing_key);
             
+            // CRITICAL: Spawn P2P network FIRST so gossipsub can form mesh
+            let p2p_handle = tokio::spawn(async move {
+                if let Err(e) = network.run().await {
+                    tracing::error!("P2P network error: {}", e);
+                }
+            });
+            
             // Connect to bootstrap peers
             if !peers.is_empty() {
                 tracing::info!("🔗 Connecting to {} bootstrap peers...", peers.len());
@@ -315,8 +322,8 @@ async fn main() -> anyhow::Result<()> {
                 
                 // Request state sync from peers if we're starting fresh
                 if state.get_height() == 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Wait for mesh
                     tracing::info!("📥 Requesting state sync from peers...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await; // Wait for connections
                     if let Err(e) = network_handle.request_state_sync().await {
                         tracing::warn!("⚠️ Failed to request state sync: {}", e);
                     }
@@ -456,13 +463,6 @@ async fn main() -> anyhow::Result<()> {
                 }
             });
             
-            // Spawn P2P network
-            let p2p_handle = tokio::spawn(async move {
-                if let Err(e) = network.run().await {
-                    tracing::error!("P2P network error: {}", e);
-                }
-            });
-
             // Start RPC server with network handle for broadcasting
             let network_handle_for_rpc = network_handle.clone();
             let (rpc_handle, event_tx) = start_rpc_server(state.clone(), rpc_addr, Some(network_handle_for_rpc)).await?;
@@ -787,6 +787,19 @@ async fn main() -> anyhow::Result<()> {
                 Some(&data_dir)
             ).await?;
             
+            // CRITICAL: Spawn P2P network FIRST so gossipsub can form mesh
+            // State sync requests go through gossipsub — the swarm must be running!
+            let mut network = network;
+            network.set_validator_signer(
+                public_key_hex.to_string(),
+                signing_key.clone(),
+            );
+            let p2p_handle = tokio::spawn(async move {
+                if let Err(e) = network.run().await {
+                    tracing::error!("P2P error: {}", e);
+                }
+            });
+            
             // Connect to bootstrap peers
             tracing::info!("🔗 Connecting to {} bootstrap peers...", peers.len());
             for peer in &peers {
@@ -796,8 +809,8 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             
-            // Wait for connections and sync state
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            // Wait for P2P connections and gossipsub mesh to form
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             if state.get_height() == 0 {
                 tracing::info!("📥 Requesting state sync from peers...");
                 let _ = network_handle.request_state_sync().await;
@@ -1148,6 +1161,7 @@ async fn main() -> anyhow::Result<()> {
             let signer_for_events = signing_key.clone();
             let network_for_events = network_handle.clone();
             let event_handler = tokio::spawn(async move {
+                let mut last_sync_retry = std::time::Instant::now() - std::time::Duration::from_secs(30);
                 while let Some(event) = event_rx.recv().await {
                     match event {
                         p2p::NetworkEvent::ChallengeReceived(msg) => {
@@ -1157,7 +1171,15 @@ async fn main() -> anyhow::Result<()> {
                             tracing::debug!("📡 P2P Proof from {}...", &msg.response.validator_pubkey[..16]);
                         }
                         p2p::NetworkEvent::BlockReceived(msg) => {
-                            tracing::info!("📡 P2P Block {} received", msg.header.height);
+                            let our_height = state_for_events.get_height();
+                            if our_height == 0 && msg.header.height > 10 && last_sync_retry.elapsed() > std::time::Duration::from_secs(10) {
+                                // We're at height 0 but network is way ahead — re-request state sync
+                                tracing::info!("📡 Block {} received but we're at height 0 — requesting state sync...", msg.header.height);
+                                let _ = network_for_events.request_state_sync().await;
+                                last_sync_retry = std::time::Instant::now();
+                            } else if our_height > 0 {
+                                tracing::info!("📡 P2P Block {} received (our height: {})", msg.header.height, our_height);
+                            }
                         }
                         p2p::NetworkEvent::PeerConnected(peer_id) => {
                             tracing::info!("🤝 Peer connected: {}", peer_id);
@@ -1270,18 +1292,6 @@ async fn main() -> anyhow::Result<()> {
                         }
                         _ => {}
                     }
-                }
-            });
-            
-            // Spawn P2P network
-            let mut network = network;
-            network.set_validator_signer(
-                public_key_hex.to_string(),
-                signing_key.clone(),
-            );
-            let p2p_handle = tokio::spawn(async move {
-                if let Err(e) = network.run().await {
-                    tracing::error!("P2P error: {}", e);
                 }
             });
             
