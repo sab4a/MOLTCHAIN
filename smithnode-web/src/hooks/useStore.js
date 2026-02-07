@@ -102,6 +102,7 @@ export const useNetworkStore = create((set, get) => ({
   validators: [],
   transactions: [],
   challenge: null,
+  networkParams: null,
   loading: false,
   error: null,
   lastUpdated: null,
@@ -114,12 +115,14 @@ export const useNetworkStore = create((set, get) => ({
       const status = await api.getStatus();
       const validators = await api.getValidators();
       const challenge = await api.getChallenge();
+      const networkParams = await api.getNetworkParams().catch(() => null);
       
       set({
         connected: true,
         status,
         validators,
         challenge,
+        networkParams,
         loading: false,
         lastUpdated: Date.now(),
       });
@@ -186,10 +189,11 @@ export const useNetworkStore = create((set, get) => ({
   // Refresh ALL data at once (fallback for when WS not working)
   refreshAll: async () => {
     try {
-      const [status, validators, challenge] = await Promise.all([
+      const [status, validators, challenge, networkParams] = await Promise.all([
         api.getStatus(),
         api.getValidators(),
         api.getChallenge(),
+        api.getNetworkParams().catch(() => null),
       ]);
       
       set({
@@ -197,6 +201,7 @@ export const useNetworkStore = create((set, get) => ({
         status,
         validators,
         challenge,
+        networkParams,
         error: null,
         lastUpdated: Date.now(),
       });

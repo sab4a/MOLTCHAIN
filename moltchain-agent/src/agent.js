@@ -151,11 +151,19 @@ export class SmithNodeAgent {
       const p = dashboard.network_params;
       console.log(`   ⚙️  Reward/proof: ${p.reward_per_proof} | Committee: ${p.committee_size} | Slash: ${p.slash_percentage}%`);
       
-      // Show active governance proposals
+      // Show active governance proposals and AUTO-VOTE
       if (dashboard.active_proposals && dashboard.active_proposals.length > 0) {
         console.log(`   🏛️  Active proposals: ${dashboard.active_proposals.length}`);
         for (const prop of dashboard.active_proposals) {
           console.log(`      #${prop.id} [${prop.proposal_type}] For: ${prop.votes_for} Against: ${prop.votes_against} - ${prop.status}`);
+          
+          // Auto-vote if we haven't voted yet
+          if (prop.status === 'active') {
+            const alreadyVoted = prop.votes?.some(v => v.voter === this.publicKey);
+            if (!alreadyVoted) {
+              await this.voteOnProposal(prop, dashboard);
+            }
+          }
         }
       }
       
@@ -559,5 +567,125 @@ export class SmithNodeAgent {
    */
   async getProposals() {
     return this.rpc('smithnode_getProposals', []);
+  }
+
+  /**
+   * Ask AI to analyze a governance proposal and decide how to vote
+   * Returns { vote: boolean, reason: string }
+   */
+  async queryAIForGovernance(proposal, dashboard) {
+    const proposalTypes = {
+      0: 'ChangeReward',
+      1: 'ChangeCommitteeSize',
+      2: 'ChangeMinStake',
+      3: 'ChangeSlashPenalty',
+      4: 'ChangeBlockTime',
+      5: 'ChangeAIRateLimit',
+      6: 'ChangeMaxValidators',
+    };
+
+    let networkParams = {};
+    try {
+      networkParams = await this.getNetworkParams();
+    } catch (e) {
+      // fallback to defaults
+    }
+
+    const proposalType = proposalTypes[proposal.proposal_type] || `Unknown(${proposal.proposal_type})`;
+    
+    const prompt = `You are a validator on SmithNode, a decentralized AI-powered blockchain.
+
+GOVERNANCE PROPOSAL #${proposal.id}:
+- Type: ${proposalType}
+- Proposed value: ${proposal.proposed_value}
+- Proposer: ${proposal.proposer}
+- Current votes FOR: ${proposal.votes_for}, AGAINST: ${proposal.votes_against}
+
+CURRENT NETWORK PARAMETERS:
+- reward_per_proof: ${networkParams.reward_per_proof ?? 100}
+- committee_size: ${networkParams.committee_size ?? 5}
+- min_stake: ${networkParams.min_stake ?? 0}
+- slash_penalty: ${networkParams.slash_penalty ?? 50}
+- block_time_secs: ${networkParams.block_time_secs ?? 10}
+- ai_rate_limit: ${networkParams.ai_rate_limit ?? 5}
+- max_validators: ${networkParams.max_validators ?? 100}
+
+NETWORK STATE:
+- Total validators: ${dashboard?.validators?.length ?? 'unknown'}
+- Current block height: ${dashboard?.chain?.height ?? 'unknown'}
+
+Analyze this proposal. Consider whether the proposed change is beneficial for network security, validator incentives, and overall health.
+
+You MUST respond with ONLY a valid JSON object (no markdown, no code fences):
+{"vote": true, "reason": "your reasoning here"}
+
+If you support the proposal, set "vote" to true. If you oppose it, set "vote" to false.
+Keep your reason concise but informative (1-2 sentences).`;
+
+    try {
+      const response = await this.queryAI(prompt);
+      
+      // Try to parse JSON from the response
+      const jsonMatch = response.match(/\{[\s\S]*"vote"[\s\S]*"reason"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          vote: Boolean(parsed.vote),
+          reason: String(parsed.reason || 'AI analysis complete'),
+        };
+      }
+      
+      // Fallback: check if response contains yes/for/approve
+      const lower = response.toLowerCase();
+      const isFor = lower.includes('approve') || lower.includes('"vote": true') || lower.includes('"vote":true');
+      return {
+        vote: isFor,
+        reason: response.substring(0, 200),
+      };
+    } catch (error) {
+      console.log(`      ⚠️  AI governance analysis failed: ${error.message}`);
+      // Default: abstain by voting for (support proposer's intent)
+      return {
+        vote: true,
+        reason: 'AI analysis unavailable — defaulting to support',
+      };
+    }
+  }
+
+  /**
+   * Vote on a governance proposal with AI-generated reasoning
+   */
+  async voteOnProposal(proposal, dashboard) {
+    try {
+      console.log(`      🤖 Analyzing proposal #${proposal.id}...`);
+      
+      // Ask AI for vote decision and reasoning
+      const { vote, reason } = await this.queryAIForGovernance(proposal, dashboard);
+      
+      // Build the message to sign: proposal_id (8 bytes LE) || vote_byte (1 byte)
+      const proposalIdBuffer = Buffer.alloc(8);
+      proposalIdBuffer.writeBigUInt64LE(BigInt(proposal.id));
+      const voteByte = Buffer.from([vote ? 0x01 : 0x00]);
+      const message = Buffer.concat([proposalIdBuffer, voteByte]);
+      
+      // Sign with ed25519
+      const signature = await signMessage(this.privateKey, message);
+      const signatureHex = bytesToHex(signature);
+      
+      // Submit vote via RPC
+      await this.rpc('smithnode_voteProposal', [{
+        voter: this.publicKey,
+        proposal_id: proposal.id,
+        vote: vote,
+        signature: signatureHex,
+        reason: reason,
+      }]);
+      
+      const emoji = vote ? '✅' : '❌';
+      console.log(`      ${emoji} Voted ${vote ? 'FOR' : 'AGAINST'} proposal #${proposal.id}`);
+      console.log(`         Reason: ${reason}`);
+    } catch (error) {
+      console.log(`      ⚠️  Failed to vote on proposal #${proposal.id}: ${error.message}`);
+    }
   }
 }

@@ -187,6 +187,21 @@ export const api = {
   getTransactions: (page = 1, perPage = 20, txType = null) => rpc('smithnode_getTransactions', [page, perPage, txType]),
   getBlock: (hash) => rpc('smithnode_getBlock', [hash]),
   getState: () => rpc('smithnode_getState'),
+  getNetworkParams: () => rpc('smithnode_getNetworkParams'),
+  // Governance
+  getProposals: () => rpc('smithnode_getProposals'),
+  createProposal: (data) => rpc('smithnode_createProposal', [data]),
+  voteProposal: (data) => rpc('smithnode_voteProposal', [data]),
+  executeProposal: (data) => rpc('smithnode_executeProposal', [data]),
+  // AI Messages / Discussions
+  getAIMessages: (topic) => rpc('smithnode_getAIMessages', [topic]),
+  sendAIMessage: (data) => rpc('smithnode_sendAIMessage', [data]),
+  // P2P / Network
+  getP2PValidators: () => rpc('smithnode_getP2PValidators'),
+  isP2PVerified: (pubkey) => rpc('smithnode_isP2PVerified', [pubkey]),
+  getCommittee: () => rpc('smithnode_getCommittee'),
+  getUpgradeAnnouncement: () => rpc('smithnode_getUpgradeAnnouncement'),
+  getAgentDashboard: (pubkey) => rpc('smithnode_getAgentDashboard', [pubkey]),
 };
 
 // Format helpers

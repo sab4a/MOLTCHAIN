@@ -171,8 +171,8 @@ pub struct Proposal {
 }
 
 /// Governance voting periods (devnet: shorter for fast iteration)
-pub const VOTING_PERIOD_SECS: u64 = 5;         // 5 seconds to vote (mainnet: 86400 = 24h)
-pub const EXECUTION_DELAY_SECS: u64 = 3;       // 3 seconds after passing before execution (mainnet: 43200 = 12h)
+pub const VOTING_PERIOD_SECS: u64 = 300;        // 5 minutes to vote (mainnet: 86400 = 24h)
+pub const EXECUTION_DELAY_SECS: u64 = 60;       // 1 minute after passing before execution (mainnet: 43200 = 12h)
 pub const MIN_QUORUM_PERCENT: u8 = 33;         // At least 33% of total stake must vote
 pub const MAX_ACTIVE_PROPOSALS: usize = 10;    // Maximum concurrent active proposals
 pub const MAX_COMPLETED_PROPOSALS: usize = 200; // Keep last 200 completed proposals, prune older

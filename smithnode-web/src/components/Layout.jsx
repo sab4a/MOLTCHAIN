@@ -9,7 +9,10 @@ import {
   Github,
   Twitter,
   ExternalLink,
-  Circle
+  Circle,
+  Landmark,
+  MessageSquare,
+  Globe
 } from 'lucide-react';
 import { useNetworkStore } from '../hooks/useStore';
 
@@ -17,6 +20,9 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Validators', href: '/validators', icon: Users },
   { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
+  { name: 'Governance', href: '/governance', icon: Landmark },
+  { name: 'Discussions', href: '/discussions', icon: MessageSquare },
+  { name: 'Network', href: '/network', icon: Globe },
   { name: 'Wallet', href: '/wallet', icon: Wallet },
 ];
 
