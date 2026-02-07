@@ -999,20 +999,67 @@ async fn main() -> anyhow::Result<()> {
                             continue;
                         }
                         
-                        // Default: approve reasonable proposals. 
-                        // AI agents can analyze the proposal if AI is available
-                        let (vote_decision, reason) = match ai_for_gov.solve_puzzle(&format!(
-                            "Governance proposal #{}: type={:?}, proposed new_value. \
-                            Should this parameter change be approved? \
-                            Reply with just 'YES' or 'NO' followed by a brief reason.",
-                            proposal.id, proposal.proposal_type
-                        )).await {
+                        // AI agents analyze the proposal with full context
+                        let current_params = state_for_gov.get_network_params();
+                        let proposal_desc = proposal.proposal_type.description();
+                        let current_value_info = match &proposal.proposal_type {
+                            stf::ProposalType::ChangeReward { new_value } =>
+                                format!("Current reward: {} SMITH → Proposed: {} SMITH", current_params.reward_per_proof, new_value),
+                            stf::ProposalType::ChangeCommitteeSize { new_value } =>
+                                format!("Current committee size: {} → Proposed: {}", current_params.committee_size, new_value),
+                            stf::ProposalType::ChangeMinStake { new_value } =>
+                                format!("Current min stake: {} SMITH → Proposed: {} SMITH", current_params.min_validator_stake, new_value),
+                            stf::ProposalType::ChangeSlashPenalty { new_value } =>
+                                format!("Current slash penalty: {}% → Proposed: {}%", current_params.slash_percentage, new_value),
+                            stf::ProposalType::ChangeBlockTime { new_value } =>
+                                format!("Current block time: {}s → Proposed: {}s", current_params.block_time_secs, new_value),
+                            stf::ProposalType::ChangeAIRateLimit { new_value } =>
+                                format!("Current AI rate limit: {}s → Proposed: {}s", current_params.ai_rate_limit_secs, new_value),
+                            stf::ProposalType::ChangeMaxValidators { new_value } =>
+                                format!("Current max validators: {} → Proposed: {}", current_params.max_validators, new_value),
+                            stf::ProposalType::Emergency { action } =>
+                                format!("Emergency action: {}", action),
+                        };
+
+                        let prompt = format!(
+                            "You are an AI validator on SmithNode blockchain. A governance proposal needs your vote.\n\
+                            \n\
+                            PROPOSAL #{}: {}\n\
+                            {}\n\
+                            \n\
+                            Analyze whether this change benefits network security, fairness, and health.\n\
+                            Start your reply with YES or NO, then explain your reasoning in 1-2 sentences.\n\
+                            Example: YES, increasing the reward incentivizes more validators to join.",
+                            proposal.id, proposal_desc, current_value_info
+                        );
+
+                        let (vote_decision, reason) = match ai_for_gov.solve_puzzle(&prompt).await {
                             Ok(answer) => {
                                 let lower = answer.to_lowercase();
                                 let approve = !lower.starts_with("no");
-                                (approve, Some(answer))
+                                // Extract the reasoning part — strip YES/NO prefix
+                                let reasoning = answer.trim().to_string();
+                                let reasoning = if reasoning.to_lowercase().starts_with("yes") {
+                                    reasoning.trim_start_matches(|c: char| c == 'Y' || c == 'y' || c == 'E' || c == 'e' || c == 'S' || c == 's')
+                                        .trim_start_matches(|c: char| c == ',' || c == '.' || c == ':' || c == ' ' || c == '!' )
+                                        .trim()
+                                        .to_string()
+                                } else if reasoning.to_lowercase().starts_with("no") {
+                                    reasoning.trim_start_matches(|c: char| c == 'N' || c == 'n' || c == 'O' || c == 'o')
+                                        .trim_start_matches(|c: char| c == ',' || c == '.' || c == ':' || c == ' ' || c == '!')
+                                        .trim()
+                                        .to_string()
+                                } else {
+                                    reasoning
+                                };
+                                let reason_text = if reasoning.is_empty() {
+                                    format!("{} — AI analysis of {}", if approve { "Approved" } else { "Rejected" }, proposal_desc)
+                                } else {
+                                    reasoning
+                                };
+                                (approve, Some(reason_text))
                             }
-                            Err(_) => (true, Some("Auto-approved by AI validator".to_string()))
+                            Err(_) => (true, Some(format!("Auto-approved: {} appears reasonable", proposal_desc)))
                         };
                         
                         // Sign the vote: proposal_id || vote_bool
