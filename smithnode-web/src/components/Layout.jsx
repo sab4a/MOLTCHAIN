@@ -19,8 +19,8 @@ import { useNetworkStore } from '../hooks/useStore';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Validators', href: '/validators', icon: Users },
-  { name: 'Txns', href: '/transactions', icon: ArrowLeftRight },
-  { name: 'Gov', href: '/governance', icon: Landmark },
+  { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
+  { name: 'Governance', href: '/governance', icon: Landmark },
   { name: 'Network', href: '/network', icon: Globe },
   { name: 'Wallet', href: '/wallet', icon: Wallet },
 ];
@@ -66,16 +66,16 @@ export default function Layout() {
             </div>
 
             {/* Navigation */}
-            <nav className="items-center hidden gap-0.5 md:flex">
+            <nav className="items-center hidden gap-1 md:flex">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href;
                 return (
                   <NavLink
                     key={item.name}
                     to={item.href}
-                    className={`${isActive ? 'nav-link-active' : 'nav-link'} !px-2 !py-1 !text-xs !gap-1`}
+                    className={isActive ? 'nav-link-active' : 'nav-link'}
                   >
-                    <item.icon className="w-3.5 h-3.5" />
+                    <item.icon className="w-4 h-4" />
                     {item.name}
                   </NavLink>
                 );
@@ -97,16 +97,16 @@ export default function Layout() {
         </div>
 
         {/* Mobile Navigation */}
-        <nav className="flex gap-0.5 px-4 py-2 overflow-x-auto border-t md:hidden border-dark-800">
+        <nav className="flex gap-1 px-4 py-2 overflow-x-auto border-t md:hidden border-dark-800">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             return (
               <NavLink
                 key={item.name}
                 to={item.href}
-                className={`${isActive ? 'nav-link-active' : 'nav-link'} whitespace-nowrap !px-2 !py-1 !text-xs !gap-1`}
+                className={`${isActive ? 'nav-link-active' : 'nav-link'} whitespace-nowrap`}
               >
-                <item.icon className="w-3.5 h-3.5" />
+                <item.icon className="w-4 h-4" />
                 {item.name}
               </NavLink>
             );
