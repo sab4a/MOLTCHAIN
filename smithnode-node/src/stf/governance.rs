@@ -111,6 +111,9 @@ pub struct Vote {
     /// AI-generated reasoning for the vote decision (why the validator voted yes/no)
     #[serde(default)]
     pub reason: Option<String>,
+    /// Transaction hash for this vote
+    #[serde(default)]
+    pub tx_hash: Option<String>,
 }
 
 /// Proposal status
@@ -168,6 +171,14 @@ pub struct Proposal {
     
     /// Block height when created
     pub created_height: u64,
+    
+    /// Transaction hash for the proposal creation
+    #[serde(default)]
+    pub tx_hash: Option<String>,
+    
+    /// Transaction hash for the execution (if executed)
+    #[serde(default)]
+    pub execution_tx_hash: Option<String>,
 }
 
 /// Governance voting periods (devnet: shorter for fast iteration)
@@ -200,6 +211,8 @@ impl Proposal {
             yes_stake: 0,
             no_stake: 0,
             created_height: current_height,
+            tx_hash: None,
+            execution_tx_hash: None,
         }
     }
     
@@ -525,7 +538,11 @@ impl GovernanceState {
     
     /// Update proposals based on time (expire old ones, mark passed ones)
     /// Also auto-executes passed proposals after execution delay
-    pub fn tick(&mut self, current_time: u64, total_stake: u64, current_height: u64) {
+    /// Returns a list of (proposal_id, param_name, old_value, new_value) for auto-executed proposals
+    /// so the caller can create TxRecords.
+    pub fn tick(&mut self, current_time: u64, total_stake: u64, current_height: u64) -> Vec<(u64, String, String, String)> {
+        let mut auto_executed = Vec::new();
+        
         // Phase 1: Expire/pass active proposals whose voting period ended
         for proposal in &mut self.proposals {
             if proposal.status != ProposalStatus::Active {
@@ -554,10 +571,28 @@ impl GovernanceState {
             // execute_proposal will update status to Executed and apply param changes
             match self.execute_proposal(id, current_time, current_height) {
                 Ok(_) => {
-                    let param = self.param_history.last()
-                        .map(|p| format!("{}: {} → {}", p.param_name, p.old_value, p.new_value))
+                    let param_info = self.param_history.last()
+                        .map(|p| (p.param_name.clone(), p.old_value.clone(), p.new_value.clone()))
                         .unwrap_or_default();
-                    tracing::info!("🔄 Auto-executed proposal #{}: {}", id, param);
+                    
+                    // Generate auto-execution tx hash
+                    let exec_tx_hash = {
+                        use sha2::{Sha256, Digest};
+                        let mut hasher = Sha256::new();
+                        hasher.update(b"auto_execute_proposal");
+                        hasher.update(&id.to_le_bytes());
+                        hasher.update(&current_time.to_le_bytes());
+                        hasher.update(&current_height.to_le_bytes());
+                        hex::encode::<[u8; 32]>(hasher.finalize().into())
+                    };
+                    
+                    // Store execution_tx_hash on the proposal
+                    if let Some(p) = self.get_proposal_mut(id) {
+                        p.execution_tx_hash = Some(exec_tx_hash);
+                    }
+                    
+                    tracing::info!("🔄 Auto-executed proposal #{}: {} → {}", id, param_info.0, param_info.2);
+                    auto_executed.push((id, param_info.0, param_info.1, param_info.2));
                 }
                 Err(e) => {
                     tracing::warn!("⚠️ Failed to auto-execute proposal #{}: {} — marking as Failed", id, e);
@@ -571,6 +606,8 @@ impl GovernanceState {
         
         // Phase 3: Prune old completed proposals and param_history to prevent unbounded growth
         self.prune_completed();
+        
+        auto_executed
     }
     
     /// Remove old completed proposals (Executed/Expired/Failed/Rejected) beyond the retention limit.

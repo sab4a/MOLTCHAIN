@@ -2000,13 +2000,42 @@ impl SmithNodeState {
         let current_height = inner.height;
         
         match inner.governance.create_proposal(
-            proposer_hex,
+            proposer_hex.clone(),
             prop_type,
             description,
             now,
             current_height,
         ) {
             Ok(id) => {
+                // Generate tx hash for proposal creation
+                let tx_hash = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(b"create_proposal");
+                    hasher.update(proposer);
+                    hasher.update(&id.to_le_bytes());
+                    hasher.update(&now.to_le_bytes());
+                    hex::encode::<[u8; 32]>(hasher.finalize().into())
+                };
+                
+                // Store tx_hash on the proposal
+                if let Some(p) = inner.governance.get_proposal_mut(id) {
+                    p.tx_hash = Some(tx_hash.clone());
+                }
+                
+                // Create TxRecord for the proposal
+                inner.tx_records.push(TxRecord {
+                    hash: tx_hash,
+                    tx_type: "governance_propose".to_string(),
+                    from: proposer_hex,
+                    to: None,
+                    amount: 0,
+                    status: format!("proposal #{} created", id),
+                    timestamp: now,
+                    height: current_height,
+                    validators: None,
+                    challenge_hash: None,
+                });
+                
                 tracing::info!("📋 New governance proposal #{} created", id);
                 TxResult::ProposalCreated { proposal_id: id }
             }
@@ -2062,25 +2091,56 @@ impl SmithNodeState {
                 proposal_id, &voter_hex[..16], vote_str, r);
         }
         
-        let vote_record = Vote {
+        let mut vote_record = Vote {
             voter: voter_hex,
             vote,
             stake_weight,
             timestamp: now,
             signature: hex::encode(signature),
             reason: reason.map(|s| s.to_string()),
+            tx_hash: None,
         };
         
         // Calculate total stake before borrowing governance
         let total_stake: u64 = inner.validators.values().map(|v| v.balance).sum();
+        
+        // Generate tx hash for the vote
+        let vote_tx_hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"vote_proposal");
+            hasher.update(voter);
+            hasher.update(&proposal_id.to_le_bytes());
+            hasher.update(&[if vote { 1 } else { 0 }]);
+            hasher.update(&now.to_le_bytes());
+            hex::encode::<[u8; 32]>(hasher.finalize().into())
+        };
+        
+        // Set tx_hash on the vote record
+        vote_record.tx_hash = Some(vote_tx_hash.clone());
+        
+        let voter_hex_for_record = vote_record.voter.clone();
         
         // Add vote to proposal
         match inner.governance.get_proposal_mut(proposal_id) {
             Some(proposal) => {
                 match proposal.add_vote(vote_record) {
                     Ok(_) => {
-                        // Don't evaluate result here — let tick_governance() handle it
-                        // when the voting period ends, so all validators get a chance to vote
+                        let current_height = inner.height;
+                        
+                        // Create TxRecord for the vote
+                        inner.tx_records.push(TxRecord {
+                            hash: vote_tx_hash,
+                            tx_type: "governance_vote".to_string(),
+                            from: voter_hex_for_record,
+                            to: None,
+                            amount: 0,
+                            status: format!("voted {} on proposal #{}", if vote { "FOR" } else { "AGAINST" }, proposal_id),
+                            timestamp: now,
+                            height: current_height,
+                            validators: None,
+                            challenge_hash: None,
+                        });
+                        
                         tracing::info!("🗳️ Vote recorded on proposal #{} (evaluated at voting period end)", proposal_id);
                         TxResult::VoteRecorded { proposal_id, vote }
                     }
@@ -2130,13 +2190,43 @@ impl SmithNodeState {
         
         match inner.governance.execute_proposal(proposal_id, now, current_height) {
             Ok(_) => {
-                let param = inner.governance.param_history.last()
-                    .map(|p| p.param_name.clone())
+                let param_info = inner.governance.param_history.last()
+                    .map(|p| (p.param_name.clone(), p.old_value.clone(), p.new_value.clone()))
                     .unwrap_or_default();
-                tracing::info!("✅ Proposal #{} executed: {}", proposal_id, param);
+                
+                // Generate tx hash for execution
+                let exec_tx_hash = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(b"execute_proposal");
+                    hasher.update(executor);
+                    hasher.update(&proposal_id.to_le_bytes());
+                    hasher.update(&now.to_le_bytes());
+                    hex::encode::<[u8; 32]>(hasher.finalize().into())
+                };
+                
+                // Store execution tx_hash on the proposal
+                if let Some(p) = inner.governance.get_proposal_mut(proposal_id) {
+                    p.execution_tx_hash = Some(exec_tx_hash.clone());
+                }
+                
+                // Create TxRecord for the execution
+                inner.tx_records.push(TxRecord {
+                    hash: exec_tx_hash,
+                    tx_type: "governance_execute".to_string(),
+                    from: executor_hex,
+                    to: None,
+                    amount: 0,
+                    status: format!("executed proposal #{}: {} → {}", proposal_id, param_info.0, param_info.2),
+                    timestamp: now,
+                    height: current_height,
+                    validators: None,
+                    challenge_hash: None,
+                });
+                
+                tracing::info!("✅ Proposal #{} executed: {}", proposal_id, param_info.0);
                 TxResult::ProposalExecuted { 
                     proposal_id, 
-                    param_changed: param,
+                    param_changed: param_info.0,
                 }
             }
             Err(e) => TxResult::Error(e),
@@ -2193,7 +2283,33 @@ impl SmithNodeState {
             .as_secs();
         let total_supply = inner.total_supply;
         let height = inner.height;
-        inner.governance.tick(now, total_supply, height);
+        let auto_executed = inner.governance.tick(now, total_supply, height);
+        
+        // Create TxRecords for auto-executed proposals
+        for (proposal_id, param_name, old_value, new_value) in auto_executed {
+            let exec_tx_hash = inner.governance.get_proposal(proposal_id)
+                .and_then(|p| p.execution_tx_hash.clone())
+                .unwrap_or_else(|| {
+                    let mut hasher = Sha256::new();
+                    hasher.update(b"auto_execute_fallback");
+                    hasher.update(&proposal_id.to_le_bytes());
+                    hasher.update(&now.to_le_bytes());
+                    hex::encode::<[u8; 32]>(hasher.finalize().into())
+                });
+            
+            inner.tx_records.push(TxRecord {
+                hash: exec_tx_hash,
+                tx_type: "governance_execute".to_string(),
+                from: "auto".to_string(),
+                to: None,
+                amount: 0,
+                status: format!("auto-executed proposal #{}: {} {} → {}", proposal_id, param_name, old_value, new_value),
+                timestamp: now,
+                height,
+                validators: None,
+                challenge_hash: None,
+            });
+        }
     }
     
     // ============ END GOVERNANCE SYSTEM ============

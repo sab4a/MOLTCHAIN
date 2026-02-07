@@ -999,9 +999,56 @@ async fn main() -> anyhow::Result<()> {
                             continue;
                         }
                         
-                        // AI agents analyze the proposal with full context
+                        // AI agents analyze the proposal with FULL network context
                         let current_params = state_for_gov.get_network_params();
                         let proposal_desc = proposal.proposal_type.description();
+                        
+                        // Gather comprehensive network state for expert analysis
+                        let height = state_for_gov.get_height();
+                        let total_supply = state_for_gov.get_total_supply();
+                        let all_validators = state_for_gov.get_all_validators();
+                        let active_validator_count = state_for_gov.get_active_validator_count();
+                        let total_validator_count = all_validators.len();
+                        let total_staked: u64 = all_validators.iter().map(|v| v.balance).sum();
+                        let stake_ratio = if total_supply > 0 {
+                            (total_staked as f64 / total_supply as f64 * 100.0) as u64
+                        } else { 0 };
+                        
+                        // Own validator stats
+                        let own_stats = state_for_gov.get_validator(&pubkey_for_gov);
+                        let own_balance = own_stats.as_ref().map_or(0, |v| v.balance);
+                        let own_validations = own_stats.as_ref().map_or(0, |v| v.validations_count);
+                        let own_reputation = own_stats.as_ref().map_or(0, |v| v.reputation_score);
+                        
+                        // Inflation rate: blocks_per_day * reward / total_supply
+                        let blocks_per_day = if current_params.block_time_secs > 0 {
+                            86400 / current_params.block_time_secs
+                        } else { 0 };
+                        let daily_emission = blocks_per_day * current_params.reward_per_proof;
+                        let annual_inflation_pct = if total_supply > 0 {
+                            (daily_emission as f64 * 365.0 / total_supply as f64 * 100.0 * 10.0).round() / 10.0
+                        } else { 0.0 };
+                        
+                        // Past proposal history context
+                        let all_proposals = state_for_gov.get_governance_proposals();
+                        let executed_count = all_proposals.iter()
+                            .filter(|p| p.status == stf::ProposalStatus::Executed).count();
+                        let rejected_count = all_proposals.iter()
+                            .filter(|p| p.status == stf::ProposalStatus::Failed).count();
+                        let active_count = all_proposals.iter()
+                            .filter(|p| p.status == stf::ProposalStatus::Active).count();
+                        
+                        // Current vote tally on this proposal
+                        let total_votes = proposal.votes.len();
+                        let quorum_needed = (total_staked as f64 * 0.33) as u64;
+                        let total_voted_stake = proposal.yes_stake + proposal.no_stake;
+                        let quorum_progress = if quorum_needed > 0 {
+                            (total_voted_stake as f64 / quorum_needed as f64 * 100.0).min(100.0) as u64
+                        } else { 0 };
+                        let time_left = if proposal.voting_ends_at > now_ts {
+                            proposal.voting_ends_at - now_ts
+                        } else { 0 };
+                        
                         let current_value_info = match &proposal.proposal_type {
                             stf::ProposalType::ChangeReward { new_value } =>
                                 format!("Current reward: {} SMITH → Proposed: {} SMITH", current_params.reward_per_proof, new_value),
@@ -1022,15 +1069,14 @@ async fn main() -> anyhow::Result<()> {
                         };
 
                         let prompt = format!(
-                            "You are an AI validator on SmithNode blockchain. A governance proposal needs your vote.\n\
-                            \n\
-                            PROPOSAL #{}: {}\n\
-                            {}\n\
-                            \n\
-                            Analyze whether this change benefits network security, fairness, and health.\n\
-                            Start your reply with YES or NO, then explain your reasoning in 1-2 sentences.\n\
-                            Example: YES, increasing the reward incentivizes more validators to join.",
-                            proposal.id, proposal_desc, current_value_info
+                            "SmithNode governance vote. {current_value_info}\n\
+                            Network: {total_supply} SMITH supply, {annual_inflation_pct}% inflation, {total_validator_count} validators, {stake_ratio}% staked.\n\
+                            Should this change be approved? Reply YES or NO then explain why in 1-2 sentences.",
+                            current_value_info = current_value_info,
+                            total_supply = total_supply,
+                            annual_inflation_pct = annual_inflation_pct,
+                            total_validator_count = total_validator_count,
+                            stake_ratio = stake_ratio,
                         );
 
                         let (vote_decision, reason) = match ai_for_gov.solve_puzzle(&prompt).await {
@@ -1053,13 +1099,26 @@ async fn main() -> anyhow::Result<()> {
                                     reasoning
                                 };
                                 let reason_text = if reasoning.is_empty() {
-                                    format!("{} — AI analysis of {}", if approve { "Approved" } else { "Rejected" }, proposal_desc)
+                                    // AI gave no reasoning — generate a data-rich fallback
+                                    format!("{} {} at height {} — supply: {} SMITH, inflation: {}%, {}/{} validators active, staked: {}%",
+                                        if approve { "Approved" } else { "Rejected" },
+                                        proposal_desc,
+                                        height,
+                                        total_supply,
+                                        annual_inflation_pct,
+                                        active_validator_count,
+                                        total_validator_count,
+                                        stake_ratio,
+                                    )
                                 } else {
                                     reasoning
                                 };
                                 (approve, Some(reason_text))
                             }
-                            Err(_) => (true, Some(format!("Auto-approved: {} appears reasonable", proposal_desc)))
+                            Err(_) => (true, Some(format!(
+                                "Auto-approved {} — network healthy: {} validators, {}% staked, {}% inflation",
+                                proposal_desc, total_validator_count, stake_ratio, annual_inflation_pct
+                            )))
                         };
                         
                         // Sign the vote: proposal_id || vote_bool

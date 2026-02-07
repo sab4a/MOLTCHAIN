@@ -19,9 +19,8 @@ import { useNetworkStore } from '../hooks/useStore';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Validators', href: '/validators', icon: Users },
-  { name: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
-  { name: 'Governance', href: '/governance', icon: Landmark },
-  { name: 'Discussions', href: '/discussions', icon: MessageSquare },
+  { name: 'Txns', href: '/transactions', icon: ArrowLeftRight },
+  { name: 'Gov', href: '/governance', icon: Landmark },
   { name: 'Network', href: '/network', icon: Globe },
   { name: 'Wallet', href: '/wallet', icon: Wallet },
 ];
@@ -45,17 +44,17 @@ export default function Layout() {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="border-b border-dark-800 bg-dark-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-dark-800 bg-dark-900/50 backdrop-blur-xl">
+        <div className="px-4 mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-smith-500 to-smith-600 flex items-center justify-center shadow-lg shadow-smith-500/25">
+              <div className="flex items-center justify-center w-10 h-10 shadow-lg rounded-xl bg-gradient-to-br from-smith-500 to-smith-600 shadow-smith-500/25">
                 <Zap className="w-6 h-6 text-white" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+                  <h1 className="text-xl font-bold text-transparent bg-gradient-to-r from-white to-dark-300 bg-clip-text">
                     SmithNode
                   </h1>
                   <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 rounded border border-yellow-500/30">
@@ -67,16 +66,16 @@ export default function Layout() {
             </div>
 
             {/* Navigation */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="items-center hidden gap-0.5 md:flex">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href;
                 return (
                   <NavLink
                     key={item.name}
                     to={item.href}
-                    className={isActive ? 'nav-link-active' : 'nav-link'}
+                    className={`${isActive ? 'nav-link-active' : 'nav-link'} !px-2 !py-1 !text-xs !gap-1`}
                   >
-                    <item.icon className="w-4 h-4" />
+                    <item.icon className="w-3.5 h-3.5" />
                     {item.name}
                   </NavLink>
                 );
@@ -98,16 +97,16 @@ export default function Layout() {
         </div>
 
         {/* Mobile Navigation */}
-        <nav className="md:hidden border-t border-dark-800 px-4 py-2 flex gap-1 overflow-x-auto">
+        <nav className="flex gap-0.5 px-4 py-2 overflow-x-auto border-t md:hidden border-dark-800">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
             return (
               <NavLink
                 key={item.name}
                 to={item.href}
-                className={`${isActive ? 'nav-link-active' : 'nav-link'} whitespace-nowrap`}
+                className={`${isActive ? 'nav-link-active' : 'nav-link'} whitespace-nowrap !px-2 !py-1 !text-xs !gap-1`}
               >
-                <item.icon className="w-4 h-4" />
+                <item.icon className="w-3.5 h-3.5" />
                 {item.name}
               </NavLink>
             );
@@ -117,12 +116,12 @@ export default function Layout() {
 
       {/* Error Banner */}
       {error && (
-        <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-3">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <p className="text-red-400 text-sm">{error}</p>
+        <div className="px-4 py-3 border-b bg-red-500/10 border-red-500/20">
+          <div className="flex items-center justify-between mx-auto max-w-7xl">
+            <p className="text-sm text-red-400">{error}</p>
             <button 
               onClick={clearError}
-              className="text-red-400 hover:text-red-300 text-sm"
+              className="text-sm text-red-400 hover:text-red-300"
             >
               Dismiss
             </button>
@@ -131,15 +130,15 @@ export default function Layout() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8">
         <Outlet />
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-dark-800 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-dark-400 text-sm">
+      <footer className="mt-auto border-t border-dark-800">
+        <div className="px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8">
+          <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
+            <div className="flex items-center gap-2 text-sm text-dark-400">
               <span>© 2026 SmithNode</span>
               <span>•</span>
               <span>P2P for AI agents. Proof of Cognition.</span>
@@ -149,7 +148,7 @@ export default function Layout() {
                 href="https://github.com/smithnode" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-dark-400 hover:text-white transition-colors"
+                className="transition-colors text-dark-400 hover:text-white"
               >
                 <Github className="w-5 h-5" />
               </a>
@@ -157,7 +156,7 @@ export default function Layout() {
                 href="https://twitter.com/smithnode" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-dark-400 hover:text-white transition-colors"
+                className="transition-colors text-dark-400 hover:text-white"
               >
                 <Twitter className="w-5 h-5" />
               </a>
@@ -165,7 +164,7 @@ export default function Layout() {
                 href="https://smithnode.com" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-dark-400 hover:text-white transition-colors text-sm"
+                className="flex items-center gap-1 text-sm transition-colors text-dark-400 hover:text-white"
               >
                 Docs <ExternalLink className="w-3 h-3" />
               </a>

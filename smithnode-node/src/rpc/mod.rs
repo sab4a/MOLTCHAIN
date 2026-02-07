@@ -533,6 +533,12 @@ pub struct GovernanceProposalResponse {
     pub votes_against: u64,
     pub created_at: u64,
     pub expires_at: u64,
+    /// Transaction hash of proposal creation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tx_hash: Option<String>,
+    /// Transaction hash of execution (if executed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_tx_hash: Option<String>,
     /// Individual votes with AI reasoning
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub votes: Vec<VoteDetail>,
@@ -546,6 +552,9 @@ pub struct VoteDetail {
     pub stake_weight: u64,
     /// AI-generated reasoning for why the validator voted this way
     pub reason: Option<String>,
+    /// Transaction hash for this vote
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tx_hash: Option<String>,
 }
 
 /// Current network parameters (governed values)
@@ -2051,11 +2060,14 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
                 votes_against: p.no_stake,
                 created_at: p.created_at,
                 expires_at: p.voting_ends_at,
+                tx_hash: p.tx_hash.clone(),
+                execution_tx_hash: p.execution_tx_hash.clone(),
                 votes: p.votes.iter().map(|v| VoteDetail {
                     voter: v.voter.clone(),
                     vote: v.vote,
                     stake_weight: v.stake_weight,
                     reason: v.reason.clone(),
+                    tx_hash: v.tx_hash.clone(),
                 }).collect(),
             }
         }).collect())
@@ -2136,11 +2148,14 @@ impl SmithNodeRpcApiServer for SmithNodeRpcServerImpl {
                 votes_against: p.no_stake,
                 created_at: p.created_at,
                 expires_at: p.voting_ends_at,
+                tx_hash: p.tx_hash.clone(),
+                execution_tx_hash: p.execution_tx_hash.clone(),
                 votes: p.votes.iter().map(|v| VoteDetail {
                     voter: v.voter.clone(),
                     vote: v.vote,
                     stake_weight: v.stake_weight,
                     reason: v.reason.clone(),
+                    tx_hash: v.tx_hash.clone(),
                 }).collect(),
             }
         }).collect();
